@@ -181,7 +181,7 @@ function showToolOptions(tool) {
                 <input type="checkbox" id="npc-has-quest" ${npc.hasQuest ? "checked" : ""}/> This NPC gives a quest
             </label>
             ${npc.hasQuest ? `
-            <div id="npc-quest-section" style="margin-top:12px; background:#232634; border-radius:8px; padding:12px; display:flex; flex-direction:column;">
+            <div id="npc-quest-section" style="margin-top:12px; background:none; border-radius:8px; padding:12px; display:flex; flex-direction:column;">
                 <h4>Quest Data</h4>
                 <label>
                     Quest ID:<br>
@@ -967,25 +967,30 @@ function getNpcDefinitionCode(npc) {
     }
     function formatDialogueSection(key, arr) {
         if (!arr || !arr.length) return "";
-        return `\n    ${key}: [\n${arr.map(line => `      "${line}"`).join(",\n")}\n    ]`;
+        return `  ${key}: [\n${arr.map(line => `    "${line}"`).join(",\n")}\n  ]`;
     }
     const dialogueDefault = npc.dialogueDefault.split('\n').filter(l => l.trim());
     const dialogueQuestGiven = npc.questGiven.split('\n').filter(l => l.trim());
     const dialogueQuestIncomplete = npc.questIncomplete.split('\n').filter(l => l.trim());
     const dialogueQuestComplete = npc.questComplete.split('\n').filter(l => l.trim());
-    let dialoguePreview = `default: [\n${dialogueDefault.map(line => `      "${line}"`).join(",\n")}\n    ]`;
-    if (dialogueQuestGiven.length) dialoguePreview += formatDialogueSection("questGiven", dialogueQuestGiven);
-    if (dialogueQuestIncomplete.length) dialoguePreview += formatDialogueSection("questIncomplete", dialogueQuestIncomplete);
-    if (dialogueQuestComplete.length) dialoguePreview += formatDialogueSection("questComplete", dialogueQuestComplete);
 
+    // Build dialogue object with commas
+    let dialogueSections = [];
+    if (dialogueDefault.length) dialogueSections.push(formatDialogueSection("default", dialogueDefault));
+    if (dialogueQuestGiven.length) dialogueSections.push(formatDialogueSection("questGiven", dialogueQuestGiven));
+    if (dialogueQuestIncomplete.length) dialogueSections.push(formatDialogueSection("questIncomplete", dialogueQuestIncomplete));
+    if (dialogueQuestComplete.length) dialogueSections.push(formatDialogueSection("questComplete", dialogueQuestComplete));
+    let dialoguePreview = dialogueSections.join(",\n");
+
+    // Forced Encounter
     let forcedEncounterPreview = "";
     if (npc.npcForced && npc.triggerTiles) {
         const triggers = npc.triggerTiles.split(' ').map(pair => {
             const [x, y] = pair.split(',').map(Number);
             return (!isNaN(x) && !isNaN(y)) ? `      { x: ${x}, y: ${y} }` : null;
         }).filter(Boolean).join(",\n");
-        forcedEncounterPreview = `
-  forcedEncounter: {
+        forcedEncounterPreview = 
+`  forcedEncounter: {
     enabled: true,
     triggerTiles: [
 ${triggers}
@@ -994,19 +999,20 @@ ${triggers}
   },`;
     }
 
-    return `{
-  id: "${npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
+    // Compose the full NPC definition with the ID as the object key
+    return `${npc.id || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}: {
+  id: "${npc.id || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
   name: "${npc.name}",
   sprite: "assets/img/npc/npc_${npc.spriteGender}_${npc.spriteNumber}.png",
   interactive: true,
   spawns: ${spawnsPreview},
   dialogue: {
-    ${dialoguePreview}
-  }${npc.hasQuest ? `,
+${dialoguePreview}
+  },
   questId: "${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
-  questRedo: ${!!npc.questRedoable}` : ""}
-${forcedEncounterPreview ? forcedEncounterPreview : ""}
-}`;
+  questRedo: ${!!npc.questRedoable},
+${forcedEncounterPreview}
+},`;
 }
 
 function getQuestDefinitionCode(npc) {
@@ -1038,28 +1044,29 @@ function getQuestDefinitionCode(npc) {
     } catch (e) {
         rewards = [];
     }
-    return `{
-  id: "${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
-  name: "${npc.questName || npc.name}",
-  description: "${npc.questDescription || ""}",
-  type: "${npc.questType}",${
-    questTypeObj.requiredItems ? `\n  requiredItems: [${questTypeObj.requiredItems.map(i => ` { id: "${i.id}", amount: ${i.amount} }`).join(",")} ],` : ""
-  }${
-    questTypeObj.enemyId ? `\n  enemyId: "${questTypeObj.enemyId}",` : ""
-  }${
-    questTypeObj.requiredAmount ? `\n  requiredAmount: ${questTypeObj.requiredAmount},` : ""
-  }${
-    questTypeObj.stat ? `\n  stat: "${questTypeObj.stat}",` : ""
-  }${
-    questTypeObj.interactTileIds ? `\n  interactTileIds: [${questTypeObj.interactTileIds.map(id => `"${id}"`).join(", ")}],` : ""
-  }
-  rewards: [${rewards.map(r => {
-    if (r.id) return `{ id: "${r.id}", amount: ${r.amount || 1} }`;
-    let keys = Object.keys(r).filter(k => k !== "id" && k !== "amount");
-    return keys.map(k => `{ ${k}: ${r[k]} }`).join(", ");
-  }).join(", ")}],
-  redoable: ${!!npc.questRedoable}
-}`;
+    // Compose the full quest definition with the ID as the object key
+    return `${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}: {
+    id: "${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
+    name: "${npc.questName || npc.name}",
+    description: "${npc.questDescription || ""}",
+    type: "${npc.questType}",${
+        questTypeObj.requiredItems ? `\n    requiredItems: [${questTypeObj.requiredItems.map(i => ` { id: "${i.id}", amount: ${i.amount} }`).join(",")} ],` : ""
+    }${
+        questTypeObj.enemyId ? `\n    enemyId: "${questTypeObj.enemyId}",` : ""
+    }${
+        questTypeObj.requiredAmount ? `\n    requiredAmount: ${questTypeObj.requiredAmount},` : ""
+    }${
+        questTypeObj.stat ? `\n    stat: "${questTypeObj.stat}",` : ""
+    }${
+        questTypeObj.interactTileIds ? `\n    interactTileIds: [${questTypeObj.interactTileIds.map(id => `"${id}"`).join(", ")}],` : ""
+    }
+    rewards: [${rewards.map(r => {
+        if (r.id) return `{ id: "${r.id}", amount: ${r.amount || 1} }`;
+        let keys = Object.keys(r).filter(k => k !== "id" && k !== "amount");
+        return keys.map(k => `{ ${k}: ${r[k]} }`).join(", ");
+    }).join(", ")}],
+    redoable: ${!!npc.questRedoable}
+},`;
 }
 
 function renderTileMakerTab() {
