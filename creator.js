@@ -40,6 +40,7 @@ const enemyCreatorState = {
         speed: 1,
         xpGain: 10,
         loot: [],
+        mapNumber: 0,
         spawns: []
     }
 };
@@ -52,12 +53,117 @@ let enemySpawnSelectionStep = 0;
 let enemySpawnFirstCorner = null;
 let enemyCurrentWanderArea = null;
 
+const triggerCreatorState = {
+    trigger: {
+        id: "",
+        mapNumber: 0,
+        x: null,
+        y: null,
+        type: "dialogue",
+        sound: { enabled: false, file: "", type: "ambient" },
+        oneTime: false,
+        rewards: []
+    }
+};
+let savedTriggers = [];
+let triggerSelectionStep = 0; 
+
+// Interactable tile tool state
+const interactCreatorState = {
+    tile: {
+        id: "",
+        mapNumber: 0,
+        x: null,
+        y: null,
+        // visuals
+        useSprite: false,
+        image: "",                 
+        spriteSheet: "",           
+        imageW: 0,
+        imageH: 0,
+        rows: 1,
+        cols: 1,
+        animSpeed: 6,
+        animOnTrigger: false,
+        // gameplay
+        collision: false,
+        zIndex: 0,                 
+        notification: "",          
+        dialogue: [],
+        rewards: [],
+        sound: { enabled: false, file: "", type: "trigger" }
+    }
+};
+let savedInteractTiles = [];
+let interactSelectionStep = 0; 
+
+// World Sprite tool state
+const worldSpriteCreatorState = {
+    sprite: {
+        id: "",
+        imageName: "",        
+        imageW: 0,
+        imageH: 0,
+        rows: 1,
+        cols: 1,
+        row: 0,               
+        animSpeed: 0,         
+        zIndex: 0,
+        collision: false,
+        positions: [],        
+        positionMap: ""       
+    }
+};
+let savedWorldSprites = [];
+let spriteSelectionStep = 0;
+
+// Item tool state
+const itemCreatorState = {
+    item: {
+        id: "",
+        name: "",
+        description: "",
+        imageName: "",         // base name; if empty uses id
+        rarity: "common",
+        stackable: true,
+        useable: false,
+        removeable: true,
+        sound: { enabled: false, file: "" } // base only; .mp3 assumed
+    }
+};
+let savedItems = [];
+
+// Skill tool state
+const skillCreatorState = {
+    skill: {
+        id: "",
+        name: "",
+        description: "",
+        imageName: "",     // base name; if empty uses id
+        pool: "blue",      // blue, red, pink, all
+        chance: 1.0,
+        maxLevel: 20,
+        rarity: "common",  // common, rare, epic, legendary
+        buffs: [],         // [{ key, value }]
+        drawbacks: []      // [{ key, value }]
+    }
+};
+let savedSkills = [];
+
 let creatorMapZoom = 1;
 let creatorMapOffset = { x: 0, y: 0 };
 let creatorMapAssets = {};
 let creatorMapImages = {};
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
+
+function normalizeIdFromName(name) {
+    return (name || "")
+        .toLowerCase()
+        .replace(/\s*-\s*/g, "_")
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "");
+}
 
 // Creator Tab Render
 function renderCreatorTab() {
@@ -81,6 +187,16 @@ function renderCreatorTab() {
         <div id="npc-download-buttons" style="margin-top:16px;"></div>
         <div id="saved-enemies-list" style="margin-top:24px;"></div>
         <div id="enemy-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-triggers-list" style="margin-top:24px;"></div>
+        <div id="trigger-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-interacts-list" style="margin-top:24px;"></div>
+        <div id="interact-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-sprites-list" style="margin-top:24px;"></div>
+        <div id="sprite-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-items-list" style="margin-top:24px;"></div>
+        <div id="item-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-skills-list" style="margin-top:24px;"></div>
+        <div id="skill-download-buttons" style="margin-top:16px;"></div>
     `;
 
     document.getElementById('map-json-upload').onchange = function(e) {
@@ -177,11 +293,6 @@ function showToolPanel() {
 // Tool Options
 function showToolOptions(tool) {
     const optionsDiv = document.getElementById('creator-tool-options');
-    if (tool !== 'npc' && tool !== 'enemy') {
-        optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
-            <div>Tool options and inputs will appear here.</div>`;
-        return;
-    }
     if (tool === 'npc') {
         const npc = creatorState.npc;
         optionsDiv.innerHTML = `
@@ -329,6 +440,10 @@ function showToolOptions(tool) {
                     <div id="enemy-loot-list" style="margin-bottom:8px;"></div>
                     <button id="add-enemy-loot-btn" type="button" style="margin-top:4px;">Add Loot</button>
                 </label>
+                <label>
+                    Map Number:<br>
+                    <input type="number" id="enemy-map-number" min="0" max="99" value="${enemy.mapNumber ?? 0}" style="width:80px;" />
+                </label>
                 <button id="enemy-set-spawn-btn" style="margin-top:8px;">Add Spawn Location</button>
                 <div id="enemy-spawn-preview" style="margin-top:8px;"></div>
                 <button id="confirm-enemy-btn" style="margin-top:16px;">Confirm Enemy</button>
@@ -338,6 +453,323 @@ function showToolOptions(tool) {
         `;
         attachEnemyCreatorListeners();
         updateEnemyCreatorPreview();
+    } else if (tool === 'trigger') {
+        const t = triggerCreatorState.trigger;
+        optionsDiv.innerHTML = `
+            <h3>Trigger Tile Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:520px;">
+                <label>ID:<br>
+                    <input type="text" id="trigger-id" value="${t.id}" style="width:100%;" placeholder="e.g. echo_f3_1" />
+                </label>
+                <label>Map Number:<br>
+                    <input type="number" id="trigger-map-number" min="0" max="99" value="${t.mapNumber}" style="width:80px;" />
+                </label>
+                <label>Type:<br>
+                    <select id="trigger-type">
+                        <option value="dialogue" ${t.type === "dialogue" ? "selected" : ""}>dialogue</option>
+                        <option value="warp" ${t.type === "warp" ? "selected" : ""}>warp</option>
+                        <option value="frameChange" ${t.type === "frameChange" ? "selected" : ""}>frameChange</option>
+                    </select>
+                </label>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <button id="trigger-set-location-btn" type="button">Set Trigger Tile</button>
+                    <div id="trigger-location-preview" style="flex:1; color:#eaeaea;"></div>
+                </div>
+                <label>
+                    <input type="checkbox" id="trigger-onetime" ${t.oneTime ? "checked" : ""} />
+                    One Time (can't be triggered multiple times)
+                </label>
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Sound</legend>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="trigger-sound-enabled" ${t.sound.enabled ? "checked" : ""} /> Enabled
+                    </label>
+                    <div id="trigger-sound-fields" style="display:${t.sound.enabled ? "block" : "none"};">
+                        <label>File Name:<br>
+                            <input type="text" id="trigger-sound-file" value="${t.sound.file}" style="width:100%;" placeholder="e.g. echo" />
+                        </label>
+                        <label>Type:<br>
+                            <select id="trigger-sound-type">
+                                <option value="ambient" ${t.sound.type === "ambient" ? "selected" : ""}>ambient</option>
+                                <option value="loop" ${t.sound.type === "loop" ? "selected" : ""}>loop</option>
+                                <option value="trigger" ${t.sound.type === "trigger" ? "selected" : ""}>trigger</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+                <label>
+                    Dialogue (one line per entry):<br>
+                    <textarea id="trigger-dialogue" rows="3" style="width:100%;" placeholder="e.g. A Echo Flickers: 'Not all who climb return.'">${t.dialogue ? t.dialogue.join('\n') : ''}</textarea>
+                </label>
+                <label>
+                    Rewards:<br>
+                    <div id="trigger-rewards-list" style="margin-bottom:8px;"></div>
+                    <button id="add-trigger-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
+                </label>
+                <button id="confirm-trigger-btn" style="margin-top:16px;">Confirm Trigger</button>
+                <h4>Trigger Definition Preview</h4>
+                <pre id="trigger-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        attachTriggerCreatorListeners();
+        renderTriggerRewardsList();
+        attachTriggerRewardListeners();
+        updateTriggerCreatorPreview();
+    } else if (tool === 'interact') {
+        const t = interactCreatorState.tile;
+        optionsDiv.innerHTML = `
+            <h3>Interactable Tile Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:620px;">
+                <label>ID:<br>
+                    <input type="text" id="inter-id" value="${t.id}" style="width:100%;" placeholder="e.g. hidden_buff_1" />
+                </label>
+                <label>Map Number:<br>
+                    <input type="number" id="inter-map-number" min="0" max="99" value="${t.mapNumber}" style="width:80px;" />
+                </label>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <button id="inter-set-location-btn" type="button">Set Tile Location</button>
+                    <div id="inter-location-preview" style="flex:1; color:#eaeaea;"></div>
+                </div>
+
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Visual</legend>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="inter-use-sprite" ${t.useSprite ? "checked" : ""} />
+                        Use Sprite Sheet (animated)
+                    </label>
+                    <div id="inter-static-fields" style="display:${t.useSprite ? "none" : "block"};">
+                        <label>Image Path:<br>
+                            <input type="text" id="inter-image" value="${t.image}" style="width:100%;" placeholder="e.g. assets/img/tile/rock-3.png" />
+                        </label>
+                    </div>
+                    <div id="inter-sprite-fields" style="display:${t.useSprite ? "block" : "none"};">
+                        <label>Sprite Sheet Path:<br>
+                            <input type="text" id="inter-spriteSheet" value="${t.spriteSheet}" style="width:100%;" placeholder="e.g. assets/img/worldSprites/statue_01.png" />
+                        </label>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <label>Image W:<br><input type="number" id="inter-imageW" value="${t.imageW}" min="0" style="width:80px;"></label>
+                            <label>Image H:<br><input type="number" id="inter-imageH" value="${t.imageH}" min="0" style="width:80px;"></label>
+                            <label>Rows:<br><input type="number" id="inter-rows" value="${t.rows}" min="1" style="width:80px;"></label>
+                            <label>Cols:<br><input type="number" id="inter-cols" value="${t.cols}" min="1" style="width:80px;"></label>
+                            <label>Anim Speed:<br><input type="number" id="inter-animSpeed" value="${t.animSpeed}" min="1" style="width:80px;"></label>
+                        </div>
+                        <label style="display:flex; gap:8px; align-items:center;">
+                            <input type="checkbox" id="inter-animOnTrigger" ${t.animOnTrigger ? "checked" : ""} />
+                            Animate on trigger only
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Gameplay</legend>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="inter-collision" ${t.collision ? "checked" : ""} /> Collision
+                    </label>
+                    <label>Z-Index:<br>
+                        <select id="inter-zIndex" style="width:100px;">
+                            <option value="0" ${t.zIndex === 0 ? "selected" : ""}>0 (below player)</option>
+                            <option value="1" ${t.zIndex === 1 ? "selected" : ""}>1 (above player)</option>
+                        </select>
+                    </label>
+                    <br><label>Notification Text:<br>
+                        <input type="text" id="inter-notification" value="${t.notification}" style="width:100%;" placeholder="e.g. Press A to examine this Humming Rock." />
+                    </label>
+                </fieldset>
+
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Sound</legend>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="inter-sound-enabled" ${t.sound.enabled ? "checked" : ""} /> Enabled
+                    </label>
+                    <div id="inter-sound-fields" style="display:${t.sound.enabled ? "block" : "none"};">
+                        <label>File Name (base):<br>
+                            <input type="text" id="inter-sound-file" value="${t.sound.file}" style="width:100%;" placeholder="e.g. glitching_statue" />
+                        </label>
+                        <label>Type:<br>
+                            <select id="inter-sound-type" style="width:160px;">
+                                <option value="ambient" ${t.sound.type === "ambient" ? "selected" : ""}>ambient</option>
+                                <option value="loop" ${t.sound.type === "loop" ? "selected" : ""}>loop</option>
+                                <option value="trigger" ${t.sound.type === "trigger" ? "selected" : ""}>trigger</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <label>
+                    Dialogue (one line per entry):<br>
+                    <textarea id="inter-dialogue" rows="3" style="width:100%;" placeholder="e.g. You feel a strange energy coming from this rock.">${t.dialogue ? t.dialogue.join('\n') : ''}</textarea>
+                </label>
+
+                <label>
+                    Rewards:<br>
+                    <div id="inter-rewards-list" style="margin-bottom:8px;"></div>
+                    <button id="add-inter-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
+                </label>
+
+                <button id="confirm-interact-btn" style="margin-top:16px;">Confirm Interactable Tile</button>
+                <h4>Interactable Tile Definition Preview</h4>
+                <pre id="inter-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        attachInteractCreatorListeners();
+        renderInteractRewardsList();
+        attachInteractRewardListeners();
+        updateInteractCreatorPreview();
+    } else if (tool === 'sprite') {
+        const s = worldSpriteCreatorState.sprite;
+        optionsDiv.innerHTML = `
+            <h3>World Sprite Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:620px;">
+                <label>ID:<br>
+                    <input type="text" id="ws-id" value="${s.id}" style="width:100%;" placeholder="e.g. deer_statue" />
+                </label>
+                <label>Image Name (base, assumes assets/img/worldSprites/.png):<br>
+                    <input type="text" id="ws-image-name" value="${s.imageName}" style="width:100%;" placeholder="e.g. deer_statue" />
+                </label>
+
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Sprite Sheet Data</legend>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <label>Image W:<br><input type="number" id="ws-imageW" value="${s.imageW}" min="0" style="width:90px;"></label>
+                        <label>Image H:<br><input type="number" id="ws-imageH" value="${s.imageH}" min="0" style="width:90px;"></label>
+                        <label>Rows:<br><input type="number" id="ws-rows" value="${s.rows}" min="1" style="width:90px;"></label>
+                        <label>Cols:<br><input type="number" id="ws-cols" value="${s.cols}" min="1" style="width:90px;"></label>
+                        <label>Row (optional):<br><input type="number" id="ws-row" value="${s.row}" min="0" style="width:90px;"></label>
+                        <label>Anim Speed:<br><input type="number" id="ws-animSpeed" value="${s.animSpeed}" min="0" style="width:90px;"></label>
+                        <label>Z-Index:<br>
+                            <select id="ws-zIndex" style="width:110px;">
+                                <option value="0" ${s.zIndex === 0 ? "selected" : ""}>0 (below player)</option>
+                                <option value="1" ${s.zIndex === 1 ? "selected" : ""}>1 (above player)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+                        <input type="checkbox" id="ws-collision" ${s.collision ? "checked" : ""} />
+                        Collision
+                    </label>
+                </fieldset>
+
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Positions</legend>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <label>Map:<br>
+                            <input type="text" id="ws-position-map" value="${s.positionMap}" style="width:140px;" placeholder='e.g. 1 or "title0"' />
+                        </label>
+                        <button id="ws-add-position-btn" type="button">Add Position</button>
+                        <div id="ws-position-prompt" style="color:#eaeaea;"></div>
+                    </div>
+                    <div id="ws-positions-list" style="margin-top:8px;"></div>
+                </fieldset>
+
+                <button id="ws-confirm-btn" style="margin-top:16px;">Confirm World Sprite</button>
+                <h4>World Sprite Definition Preview</h4>
+                <pre id="ws-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        attachWorldSpriteCreatorListeners();
+        renderWorldSpritePositionsList();
+        updateWorldSpritePreview();
+    } else if (tool === 'item') {
+        const it = itemCreatorState.item;
+        optionsDiv.innerHTML = `
+            <h3>Item Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:620px;">
+                <label>Name:<br>
+                    <input type="text" id="item-name" value="${it.name}" style="width:100%;" placeholder="e.g. Health Buff - Small" />
+                </label>
+                <div style="color:#9aa4b2; font-size:12px;">ID will be generated: lowercased, spaces and ' - ' to '_'</div>
+                <label>Description:<br>
+                    <textarea id="item-description" rows="2" style="width:100%;" placeholder="Describe the item">${it.description}</textarea>
+                </label>
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <label>Rarity:<br>
+                        <select id="item-rarity" style="width:140px;">
+                            ${["common","rare","epic","legendary"].map(r => `<option value="${r}" ${it.rarity===r?"selected":""}>${r}</option>`).join("")}
+                        </select>
+                    </label>
+                    <label style="display:flex; gap:8px; align-items:center; margin-top:20px;">
+                        <input type="checkbox" id="item-stackable" ${it.stackable?"checked":""}/> Stackable
+                    </label>
+                    <label style="display:flex; gap:8px; align-items:center; margin-top:20px;">
+                        <input type="checkbox" id="item-useable" ${it.useable?"checked":""}/> Useable
+                    </label>
+                    <label style="display:flex; gap:8px; align-items:center; margin-top:20px;">
+                        <input type="checkbox" id="item-removeable" ${it.removeable?"checked":""}/> Removeable
+                    </label>
+                </div>
+                <fieldset style="border:none; padding:8px;">
+                    <legend>Media</legend>
+                    <label>Image Name (base, assumes assets/img/items/.png):<br>
+                        <input type="text" id="item-image-name" value="${it.imageName}" style="width:100%;" placeholder="leave blank to use id" />
+                    </label>
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        <label style="display:flex; gap:8px; align-items:center;">
+                            <input type="checkbox" id="item-sound-enabled" ${it.sound.enabled?"checked":""}/> Sound on use
+                        </label>
+                        <label>File Name (base):<br>
+                            <input type="text" id="item-sound-file" value="${it.sound.file}" style="width:200px;" placeholder="e.g. health" />
+                        </label>
+                    </div>
+                </fieldset>
+                <button id="confirm-item-btn" style="margin-top:16px;">Confirm Item</button>
+                <h4>Item Definition Preview</h4>
+                <pre id="item-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        attachItemCreatorListeners();
+        updateItemPreview();
+    } else if (tool === 'skill') {
+        const s = skillCreatorState.skill;
+        optionsDiv.innerHTML = `
+            <h3>Skill Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:720px;">
+                <label>Name:<br>
+                    <input type="text" id="skill-name" value="${s.name}" style="width:100%;" placeholder="e.g. Verdant Focus" />
+                </label>
+                <div style="color:#9aa4b2; font-size:12px;">ID will be generated: lowercased, spaces and ' - ' to '_'</div>
+                <label>Description:<br>
+                    <textarea id="skill-description" rows="2" style="width:100%;">${s.description}</textarea>
+                </label>
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <label>Pool:<br>
+                        <select id="skill-pool" style="width:120px;">
+                            ${["blue","red","pink","all"].map(p => `<option value="${p}" ${s.pool===p?"selected":""}>${p}</option>`).join("")}
+                        </select>
+                    </label>
+                    <label>Chance:<br>
+                        <input type="number" id="skill-chance" value="${s.chance}" step="0.1" min="0" style="width:100px;" />
+                    </label>
+                    <label>Max Level:<br>
+                        <input type="number" id="skill-maxLevel" value="${s.maxLevel}" min="1" style="width:100px;" />
+                    </label>
+                    <label>Rarity:<br>
+                        <select id="skill-rarity" style="width:140px;">
+                            ${["common","rare","epic","legendary"].map(r => `<option value="${r}" ${s.rarity===r?"selected":""}>${r}</option>`).join("")}
+                        </select>
+                    </label>
+                </div>
+                <label>Image Name (base, assumes assets/img/skills/.png):<br>
+                    <input type="text" id="skill-image-name" value="${s.imageName}" style="width:100%;" placeholder="leave blank to use id" />
+                </label>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px;">
+                    <legend>Buffs</legend>
+                    <div id="skill-buffs-list" style="margin-bottom:8px;"></div>
+                    <button id="add-skill-buff-btn" type="button">Add Buff</button>
+                </fieldset>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px;">
+                    <legend>Drawbacks</legend>
+                    <div id="skill-drawbacks-list" style="margin-bottom:8px;"></div>
+                    <button id="add-skill-drawback-btn" type="button">Add Drawback</button>
+                </fieldset>
+                <button id="confirm-skill-btn" style="margin-top:16px;">Confirm Skill</button>
+                <h4>Skill Definition Preview</h4>
+                <pre id="skill-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        renderSkillStatsList('buffs');
+        renderSkillStatsList('drawbacks');
+        attachSkillCreatorListeners();
+        updateSkillPreview();
     } else {
         optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
             <div>Tool options and inputs will appear here.</div>`;
@@ -499,7 +931,7 @@ function renderSavedNpcs() {
             renderNpcDownloadButtons();
             renderSavedEnemies();
             renderEnemyDownloadButtons();
-            drawMap();
+            if (typeof drawMap === "function") drawMap();
         };
     });
 }
@@ -753,6 +1185,34 @@ function showCreatorMap(mapData, loadedAssets = {}) {
     const canvas = document.getElementById('creator-map-canvas');
     const ctx = canvas.getContext('2d');
 
+    // Add tooltip overlay
+    const tooltip = document.createElement('div');
+    tooltip.id = 'creator-tooltip';
+    tooltip.style.position = 'absolute';
+    tooltip.style.pointerEvents = 'none';
+    tooltip.style.background = 'rgba(0,0,0,0.85)';
+    tooltip.style.border = '1px solid #4a90e2';
+    tooltip.style.borderRadius = '4px';
+    tooltip.style.padding = '6px 8px';
+    tooltip.style.fontSize = '12px';
+    tooltip.style.color = '#eaeaea';
+    tooltip.style.whiteSpace = 'pre-line';
+    tooltip.style.zIndex = '5';
+    tooltip.style.display = 'none';
+    previewDiv.appendChild(tooltip);
+
+    function showTooltip(text, clientX, clientY) {
+        if (!text) return hideTooltip();
+        const rect = previewDiv.getBoundingClientRect();
+        tooltip.textContent = text;
+        tooltip.style.left = `${clientX - rect.left + 12}px`;
+        tooltip.style.top = `${clientY - rect.top + 12}px`;
+        tooltip.style.display = 'block';
+    }
+    function hideTooltip() {
+        tooltip.style.display = 'none';
+    }
+
     // Fixed container size
     const containerWidth = previewDiv.offsetWidth || 900;
     const containerHeight = previewDiv.offsetHeight || 600;
@@ -798,7 +1258,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
         });
     } else if (mapData.layout) {
         layers = [mapData.layout];
-    }
+    }   
 
     // Center map initially
     const mapPixelWidth = width * tileSize * creatorMapZoom;
@@ -968,8 +1428,225 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                 ctx.restore();
             });
         });
+        // Highlight current trigger selection
+        if (typeof triggerCreatorState.trigger.x === "number" && typeof triggerCreatorState.trigger.y === "number") {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#a259ff";
+            ctx.fillRect(triggerCreatorState.trigger.x * tileSize, triggerCreatorState.trigger.y * tileSize, tileSize, tileSize);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = "#a259ff";
+            ctx.lineWidth = 3;
+            const centerX = triggerCreatorState.trigger.x * tileSize + tileSize / 2;
+            const centerY = triggerCreatorState.trigger.y * tileSize + tileSize / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // Draw all saved triggers
+        savedTriggers.forEach(trig => {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#a259ff";
+            ctx.fillRect(trig.x * tileSize, trig.y * tileSize, tileSize, tileSize);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = "#a259ff";
+            ctx.lineWidth = 3;
+            const centerX = trig.x * tileSize + tileSize / 2;
+            const centerY = trig.y * tileSize + tileSize / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        });
+        // Highlight current interactable selection
+        if (typeof interactCreatorState.tile.x === "number" && typeof interactCreatorState.tile.y === "number") {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#00e5ff";
+            ctx.fillRect(interactCreatorState.tile.x * tileSize, interactCreatorState.tile.y * tileSize, tileSize, tileSize);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = "#00e5ff";
+            ctx.lineWidth = 3;
+            const centerX = interactCreatorState.tile.x * tileSize + tileSize / 2;
+            const centerY = interactCreatorState.tile.y * tileSize + tileSize / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        }
+        // Draw all saved interactable tiles
+        savedInteractTiles.forEach(it => {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#00e5ff";
+            ctx.fillRect(it.x * tileSize, it.y * tileSize, tileSize, tileSize);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = "#00e5ff";
+            ctx.lineWidth = 3;
+            const centerX = it.x * tileSize + tileSize / 2;
+            const centerY = it.y * tileSize + tileSize / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        });
+        (worldSpriteCreatorState.sprite.positions || []).forEach(p => {
+            if (p.map !== undefined) {
+                ctx.save();
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = "#ffa500";
+                ctx.fillRect(p.x * tileSize, p.y * tileSize, tileSize, tileSize);
+                ctx.restore();
+                ctx.save();
+                ctx.globalAlpha = 0.85;
+                ctx.strokeStyle = "#ffa500";
+                ctx.lineWidth = 3;
+                const cx = p.x * tileSize + tileSize / 2;
+                const cy = p.y * tileSize + tileSize / 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, tileSize / 3, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            }
+        });
+        // Draw saved world sprite positions
+        savedWorldSprites.forEach(ws => {
+            (ws.positions || []).forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = "#ffa500";
+                ctx.fillRect(p.x * tileSize, p.y * tileSize, tileSize, tileSize);
+                ctx.restore();
+                ctx.save();
+                ctx.globalAlpha = 0.85;
+                ctx.strokeStyle = "#ffa500";
+                ctx.lineWidth = 3;
+                const cx = p.x * tileSize + tileSize / 2;
+                const cy = p.y * tileSize + tileSize / 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, tileSize / 3, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            });
+        });
         ctx.restore();
     }
+
+    // Helper: get tile under mouse
+    function getTileFromMouse(e) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left - creatorMapOffset.x) / creatorMapZoom;
+        const mouseY = (e.clientY - rect.top - creatorMapOffset.y) / creatorMapZoom;
+        const tSize = mapData.tilewidth || 32;
+        return {
+            x: Math.floor(mouseX / tSize),
+            y: Math.floor(mouseY / tSize)
+        };
+    }
+
+    // Helper: collect hover info for a tile
+    function getHoverInfoForTile(tx, ty) {
+        const lines = [];
+
+        // Current NPC spawn
+        if (creatorState.npc?.spawn && creatorState.npc.spawn.x === tx && creatorState.npc.spawn.y === ty) {
+            lines.push(`NPC: ${creatorState.npc.name || '(Unnamed)'} (${tx},${ty})`);
+        }
+        // Saved NPC spawns
+        savedNpcs.forEach(n => {
+            if (n.spawn && n.spawn.x === tx && n.spawn.y === ty) {
+                lines.push(`NPC (saved): ${n.name || '(Unnamed)'} [map ${n.mapNumber}]`);
+            }
+        });
+
+        // Current enemy spawns
+        (enemyCreatorState.enemy?.spawns || []).forEach(s => {
+            if (s.x === tx && s.y === ty) {
+                const nm = enemyCreatorState.enemy.name || enemyCreatorState.enemy.id || '(Unnamed Enemy)';
+                lines.push(`Enemy: ${nm} (${tx},${ty})`);
+            }
+        });
+        // Saved enemy spawns
+        savedEnemies.forEach(en => {
+            (en.spawns || []).forEach(s => {
+                if (s.x === tx && s.y === ty) {
+                    lines.push(`Enemy (saved): ${en.name || en.id || '(Unnamed)'} [map ${s.map}]`);
+                }
+            });
+        });
+
+        // Current trigger
+        const tcur = triggerCreatorState.trigger;
+        if (typeof tcur?.x === 'number' && tcur.x === tx && tcur.y === ty) {
+            lines.push(`Trigger: ${tcur.id || '(unnamed)'} • ${tcur.type}`);
+        }
+        // Saved triggers
+        savedTriggers.forEach(tr => {
+            if (tr.x === tx && tr.y === ty) {
+                lines.push(`Trigger (saved): ${tr.id || '(unnamed)'} • ${tr.type}`);
+            }
+        });
+
+        // Current interactable
+        const icur = interactCreatorState.tile;
+        if (typeof icur?.x === 'number' && icur.x === tx && icur.y === ty) {
+            lines.push(`Interactable: ${icur.id || '(unnamed)'}${icur.notification ? `\n"${icur.notification}"` : ''}`);
+        }
+        // Saved interactables
+        savedInteractTiles.forEach(it => {
+            if (it.x === tx && it.y === ty) {
+                lines.push(`Interactable (saved): ${it.id || '(unnamed)'}${it.notification ? `\n"${it.notification}"` : ''}`);
+            }
+        });
+
+        // Current world sprite positions
+        (worldSpriteCreatorState.sprite?.positions || []).forEach(p => {
+            if (p.x === tx && p.y === ty) {
+                lines.push(`World Sprite: ${worldSpriteCreatorState.sprite.id || '(unnamed)'} (${tx},${ty})`);
+            }
+        });
+        // Saved world sprite positions
+        savedWorldSprites.forEach(ws => {
+            (ws.positions || []).forEach(p => {
+                if (p.x === tx && p.y === ty) {
+                    lines.push(`World Sprite (saved): ${ws.id || '(unnamed)'} (${tx},${ty})`);
+                }
+            });
+        });
+
+        return lines;
+    }
+
+    // Tooltip handler on mouse move (skip while dragging)
+    canvas.addEventListener('mousemove', (e) => {
+        if (isDragging) { hideTooltip(); return; }
+        const { x: tx, y: ty } = getTileFromMouse(e);
+        // Outside map bounds
+        if (tx < 0 || ty < 0 || tx >= (mapData.width || width) || ty >= (mapData.height || height)) {
+            hideTooltip();
+            return;
+        }
+        const lines = getHoverInfoForTile(tx, ty);
+        if (lines.length) {
+            showTooltip(lines.join('\n'), e.clientX, e.clientY);
+        } else {
+            hideTooltip();
+        }
+    });
+
+    canvas.addEventListener('mouseleave', () => hideTooltip());
+    canvas.addEventListener('mousedown', () => hideTooltip());
+    canvas.addEventListener('touchstart', () => hideTooltip(), { passive: true });
 
     // Touch drag support
     let lastTouch = null;
@@ -1145,7 +1822,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                     y >= area.y1 && y <= area.y2
                 ) {
                     enemyCreatorState.enemy.spawns.push({
-                        map: typeof enemyCreatorState.enemy.mapNumber !== "undefined" ? enemyCreatorState.enemy.mapNumber : 0,
+                        map: enemyCreatorState.enemy.mapNumber,
                         x, y,
                         wanderArea: {
                             x1: area.x1,
@@ -1166,6 +1843,38 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                     if (previewDiv) previewDiv.textContent = "Spawn must be inside the wander area. Try again.";
                 }
             }
+        }
+
+        // Trigger tile selection
+        if (triggerSelectionStep === 1) {
+            triggerCreatorState.trigger.x = x;
+            triggerCreatorState.trigger.y = y;
+            triggerSelectionStep = 0;
+            updateTriggerPrompt();
+            updateTriggerCreatorPreview();
+            if (typeof drawMap === "function") drawMap();
+        }
+
+        // Interactable tile selection
+        if (interactSelectionStep === 1) {
+            interactCreatorState.tile.x = x;
+            interactCreatorState.tile.y = y;
+            interactSelectionStep = 0;
+            updateInteractPrompt();
+            updateInteractCreatorPreview();
+            if (typeof drawMap === "function") drawMap();
+        }
+
+        // World Sprite position selection
+        if (spriteSelectionStep === 1) {
+            const mapInput = worldSpriteCreatorState.sprite.positionMap;
+            const mapVal = (mapInput !== "" && !isNaN(Number(mapInput))) ? Number(mapInput) : (mapInput || 0);
+            worldSpriteCreatorState.sprite.positions.push({ map: mapVal, x, y });
+            spriteSelectionStep = 0;
+            renderWorldSpritePositionsList();
+            updateWorldSpritePositionPrompt();
+            updateWorldSpritePreview();
+            if (typeof drawMap === "function") drawMap();
         }
     };
     resizeCanvas();
@@ -1414,7 +2123,10 @@ function attachEnemyCreatorListeners() {
     document.getElementById('enemy-xpGain').oninput = e => { enemy.xpGain = parseInt(e.target.value); updateEnemyCreatorPreview(); };
     renderEnemyLootList();
     attachEnemyLootListeners();
-
+    document.getElementById('enemy-map-number').oninput = e => {
+        enemy.mapNumber = parseInt(e.target.value) || 0;
+        updateEnemyCreatorPreview();
+    };
     document.getElementById('enemy-set-spawn-btn').onclick = function() {
         enemySpawnSelectionStep = 1;
         enemySpawnFirstCorner = null;
@@ -1483,7 +2195,7 @@ function renderSavedEnemies() {
             renderNpcDownloadButtons();
             renderSavedEnemies();
             renderEnemyDownloadButtons();
-            drawMap();
+            if (typeof drawMap === "function") drawMap();
         };
     });
 }
@@ -1534,6 +2246,7 @@ function clearEnemyInputs() {
         speed: 1,
         xpGain: 10,
         loot: [],
+        mapNumber: 0,
         spawns: []
     };
     showToolOptions("enemy");
@@ -1541,4 +2254,955 @@ function clearEnemyInputs() {
 
 function updateEnemyCreatorPreview() {
     document.getElementById('enemy-def-preview').textContent = getEnemyDefinitionCode(enemyCreatorState.enemy);
+}
+
+function attachTriggerCreatorListeners() {
+    const t = triggerCreatorState.trigger;
+    document.getElementById('trigger-id').oninput = e => { t.id = e.target.value.trim(); updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-map-number').oninput = e => { t.mapNumber = parseInt(e.target.value) || 0; updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-type').onchange = e => { t.type = e.target.value; updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-onetime').onchange = e => { t.oneTime = e.target.checked; updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-sound-enabled').onchange = e => {
+        t.sound.enabled = e.target.checked;
+        document.getElementById('trigger-sound-fields').style.display = e.target.checked ? "block" : "none";
+        updateTriggerCreatorPreview();
+    };
+    document.getElementById('trigger-sound-file').oninput = e => { t.sound.file = e.target.value.trim(); updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-sound-type').onchange = e => { t.sound.type = e.target.value; updateTriggerCreatorPreview(); };
+    document.getElementById('trigger-dialogue').oninput = e => {
+        t.dialogue = e.target.value.split('\n').map(line => line.trim()).filter(Boolean);
+        updateTriggerCreatorPreview();
+    };
+    document.getElementById('trigger-set-location-btn').onclick = () => {
+        triggerSelectionStep = 1;
+        updateTriggerPrompt();
+    };
+    document.getElementById('confirm-trigger-btn').onclick = () => {
+        if (typeof t.x !== "number" || typeof t.y !== "number") {
+            updateTriggerPrompt("Please set a trigger tile on the map first.");
+            return;
+        }
+        savedTriggers.push(JSON.parse(JSON.stringify(t)));
+        renderSavedTriggers();
+        renderTriggerDownloadButtons();
+        clearTriggerInputs();
+        updateTriggerCreatorPreview();
+        updateTriggerPrompt();
+        if (typeof drawMap === "function") drawMap();
+    };
+}
+
+function clearTriggerInputs() {
+    triggerCreatorState.trigger = {
+        id: "",
+        mapNumber: 0,
+        x: null,
+        y: null,
+        type: "dialogue",
+        sound: { enabled: false, file: "", type: "ambient" },
+        dialogue: [],
+        oneTime: false,
+        rewards: []
+    };
+    showToolOptions("trigger");
+}
+
+function updateTriggerPrompt(text) {
+    const el = document.getElementById('trigger-location-preview');
+    if (!el) return;
+    if (text) { el.textContent = text; return; }
+    el.textContent = triggerSelectionStep === 1
+        ? "Click/tap a tile on the map to set trigger location."
+        : (typeof triggerCreatorState.trigger.x === "number"
+            ? `Location set: (${triggerCreatorState.trigger.x}, ${triggerCreatorState.trigger.y})`
+            : "");
+}
+
+function renderTriggerRewardsList() {
+    const rewards = triggerCreatorState.trigger.rewards || [];
+    const listDiv = document.getElementById('trigger-rewards-list');
+    if (!listDiv) return;
+    listDiv.innerHTML = rewards.map((r, i) => `
+        <div class="trigger-reward-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <input type="text" class="trigger-reward-id" value="${r.id || ''}" placeholder="Item ID" style="width:160px;">
+            <input type="number" class="trigger-reward-amount" value="${r.amount || 1}" min="1" style="width:60px;">
+            <button type="button" class="remove-trigger-reward-btn">Remove</button>
+        </div>
+    `).join("");
+}
+
+function attachTriggerRewardListeners() {
+    const list = document.getElementById('trigger-rewards-list');
+    if (!list) return;
+    list.querySelectorAll('.trigger-reward-id, .trigger-reward-amount').forEach(input => {
+        input.oninput = () => {
+            const rewards = [];
+            list.querySelectorAll('.trigger-reward-row').forEach(row => {
+                const id = row.querySelector('.trigger-reward-id').value.trim();
+                const amount = Number(row.querySelector('.trigger-reward-amount').value) || 1;
+                if (id) rewards.push({ id, amount });
+            });
+            triggerCreatorState.trigger.rewards = rewards;
+            updateTriggerCreatorPreview();
+        };
+    });
+    list.querySelectorAll('.remove-trigger-reward-btn').forEach(btn => {
+        btn.onclick = () => {
+            btn.parentElement.remove();
+            list.querySelector('.trigger-reward-id')?.dispatchEvent(new Event('input'));
+        };
+    });
+    const addBtn = document.getElementById('add-trigger-reward-btn');
+    if (addBtn) {
+        addBtn.onclick = () => {
+            const newRow = document.createElement('div');
+            newRow.className = 'trigger-reward-row';
+            newRow.style = "display:flex; gap:8px; align-items:center; margin-bottom:4px;";
+            newRow.innerHTML = `
+                <input type="text" class="trigger-reward-id" placeholder="Item ID" style="width:160px;">
+                <input type="number" class="trigger-reward-amount" value="1" min="1" style="width:60px;">
+                <button type="button" class="remove-trigger-reward-btn">Remove</button>
+            `;
+            list.appendChild(newRow);
+            attachTriggerRewardListeners();
+        };
+    }
+}
+
+function renderSavedTriggers() {
+    const listDiv = document.getElementById('saved-triggers-list');
+    if (!listDiv) return;
+    if (savedTriggers.length === 0) {
+        listDiv.innerHTML = "<b>No trigger tiles saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedTriggers.map((trig, idx) => `
+        <div class="saved-trigger-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${trig.id || "(Unnamed Trigger)"}</span>
+            <button type="button" class="edit-trigger-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-trigger-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-trigger-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            triggerCreatorState.trigger = JSON.parse(JSON.stringify(savedTriggers[idx]));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="trigger"]').classList.add('active');
+            showToolOptions("trigger");
+            updateTriggerCreatorPreview();
+            renderTriggerDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-trigger-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedTriggers.splice(idx, 1);
+            renderSavedTriggers();
+            renderTriggerDownloadButtons();
+            if (typeof drawMap === "function") drawMap();
+        };
+    });
+}
+
+function renderTriggerDownloadButtons() {
+    const btnDiv = document.getElementById('trigger-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `
+        <button id="download-trigger-defs" type="button">Download Trigger Tile Definitions</button>
+    `;
+    document.getElementById('download-trigger-defs').onclick = () => {
+        const code = savedTriggers.map(trig => getTriggerDefinitionCode(trig)).join("\n\n");
+        downloadTextFile("trigger_definitions.js", code);
+    };
+}
+
+function getTriggerDefinitionCode(trig) {
+    let rewardsStr = trig.rewards && trig.rewards.length
+        ? `,\n    rewards: [${trig.rewards.map(r => `{ id: "${r.id}", amount: ${r.amount} }`).join(", ")}]`
+        : "";
+    let soundStr = trig.sound && trig.sound.enabled && trig.sound.file
+        ? `,\n    sound: { enabled: true, file: "${trig.sound.file}.mp3", type: "${trig.sound.type}" }`
+        : "";
+    let dialogueStr = trig.dialogue && trig.dialogue.length
+        ? `,\n    dialogue: [\n${trig.dialogue.map(line => `        "${line}"`).join(",\n")}\n    ]`
+        : "";
+    return `${trig.id}: {
+    id: "${trig.id}",
+    map: ${trig.mapNumber},
+    x: ${trig.x},
+    y: ${trig.y},
+    type: "${trig.type}"${dialogueStr}${soundStr}${rewardsStr}${trig.oneTime ? ",\n    oneTime: true" : ""}
+},`;
+}
+
+function updateTriggerCreatorPreview() {
+    const t = triggerCreatorState.trigger;
+    let rewardsStr = t.rewards && t.rewards.length
+        ? `\n  rewards: [${t.rewards.map(r => `{ id: "${r.id}", amount: ${r.amount} }`).join(", ")}],`
+        : "";
+    let soundStr = t.sound && t.sound.enabled && t.sound.file
+        ? `\n  sound: { enabled: true, file: "${t.sound.file}.mp3", type: "${t.sound.type}" },`
+        : "";
+    let oneTimeStr = t.oneTime ? `\n  oneTime: true,` : "";
+    let dialogueStr = t.dialogue && t.dialogue.length
+        ? `\n  dialogue: [\n${t.dialogue.map(line => `    "${line}"`).join(",\n")}\n  ],`
+        : "";
+    let preview =
+`{
+  id: "${t.id}",
+  map: ${t.mapNumber},
+  x: ${t.x},
+  y: ${t.y},
+  type: "${t.type}",${dialogueStr}${soundStr}${rewardsStr}${oneTimeStr}
+}`;
+    const previewEl = document.getElementById('trigger-def-preview');
+    if (previewEl) previewEl.textContent = preview;
+}
+
+
+function attachInteractCreatorListeners() {
+    const t = interactCreatorState.tile;
+
+    const useSpriteEl = document.getElementById('inter-use-sprite');
+    const staticFields = document.getElementById('inter-static-fields');
+    const spriteFields = document.getElementById('inter-sprite-fields');
+    const sndEnabledEl = document.getElementById('inter-sound-enabled');
+    const sndFields = document.getElementById('inter-sound-fields');
+
+    document.getElementById('inter-id').oninput = e => { t.id = e.target.value.trim(); updateInteractCreatorPreview(); };
+    document.getElementById('inter-map-number').oninput = e => { t.mapNumber = parseInt(e.target.value) || 0; updateInteractCreatorPreview(); };
+    document.getElementById('inter-set-location-btn').onclick = () => { interactSelectionStep = 1; updateInteractPrompt(); };
+
+    useSpriteEl.onchange = e => {
+        t.useSprite = e.target.checked;
+        staticFields.style.display = t.useSprite ? "none" : "block";
+        spriteFields.style.display = t.useSprite ? "block" : "none";
+        updateInteractCreatorPreview();
+    };
+
+    // Visual fields
+    document.getElementById('inter-image').oninput = e => { t.image = e.target.value.trim(); updateInteractCreatorPreview(); };
+    document.getElementById('inter-spriteSheet').oninput = e => { t.spriteSheet = e.target.value.trim(); updateInteractCreatorPreview(); };
+    document.getElementById('inter-imageW').oninput = e => { t.imageW = parseInt(e.target.value) || 0; updateInteractCreatorPreview(); };
+    document.getElementById('inter-imageH').oninput = e => { t.imageH = parseInt(e.target.value) || 0; updateInteractCreatorPreview(); };
+    document.getElementById('inter-rows').oninput = e => { t.rows = parseInt(e.target.value) || 1; updateInteractCreatorPreview(); };
+    document.getElementById('inter-cols').oninput = e => { t.cols = parseInt(e.target.value) || 1; updateInteractCreatorPreview(); };
+    document.getElementById('inter-animSpeed').oninput = e => { t.animSpeed = parseInt(e.target.value) || 1; updateInteractCreatorPreview(); };
+    document.getElementById('inter-animOnTrigger').onchange = e => { t.animOnTrigger = e.target.checked; updateInteractCreatorPreview(); };
+
+    // Gameplay
+    document.getElementById('inter-collision').onchange = e => { t.collision = e.target.checked; updateInteractCreatorPreview(); };
+    document.getElementById('inter-zIndex').onchange = e => { t.zIndex = parseInt(e.target.value) || 0; updateInteractCreatorPreview(); };
+    document.getElementById('inter-notification').oninput = e => { t.notification = e.target.value; updateInteractCreatorPreview(); };
+
+    // Sound
+    sndEnabledEl.onchange = e => {
+        t.sound.enabled = e.target.checked;
+        sndFields.style.display = e.target.checked ? "block" : "none";
+        updateInteractCreatorPreview();
+    };
+    document.getElementById('inter-sound-file').oninput = e => { t.sound.file = e.target.value.trim(); updateInteractCreatorPreview(); };
+    document.getElementById('inter-sound-type').onchange = e => { t.sound.type = e.target.value; updateInteractCreatorPreview(); };
+
+    // Dialogue
+    document.getElementById('inter-dialogue').oninput = e => {
+        t.dialogue = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+        updateInteractCreatorPreview();
+    };
+
+    // Confirm
+    document.getElementById('confirm-interact-btn').onclick = () => {
+        if (typeof t.x !== "number" || typeof t.y !== "number") {
+            updateInteractPrompt("Please set the tile location on the map first.");
+            return;
+        }
+        savedInteractTiles.push(JSON.parse(JSON.stringify(t)));
+        renderSavedInteractTiles();
+        renderInteractDownloadButtons();
+        clearInteractInputs();
+        updateInteractCreatorPreview();
+        updateInteractPrompt();
+        if (typeof drawMap === "function") drawMap();
+    };
+}
+
+function updateInteractPrompt(text) {
+    const el = document.getElementById('inter-location-preview');
+    if (!el) return;
+    if (text) { el.textContent = text; return; }
+    el.textContent = interactSelectionStep === 1
+        ? "Click/tap a tile on the map to set this interactable's location."
+        : (typeof interactCreatorState.tile.x === "number"
+            ? `Location set: (${interactCreatorState.tile.x}, ${interactCreatorState.tile.y})`
+            : "");
+}
+
+function renderInteractRewardsList() {
+    const rewards = interactCreatorState.tile.rewards || [];
+    const listDiv = document.getElementById('inter-rewards-list');
+    if (!listDiv) return;
+    listDiv.innerHTML = rewards.map((r, i) => `
+        <div class="inter-reward-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <input type="text" class="inter-reward-id" value="${r.id || ''}" placeholder="Item ID" style="width:160px;">
+            <input type="number" class="inter-reward-amount" value="${r.amount || 1}" min="1" style="width:60px;">
+            <button type="button" class="remove-inter-reward-btn">Remove</button>
+        </div>
+    `).join("");
+}
+
+function attachInteractRewardListeners() {
+    const list = document.getElementById('inter-rewards-list');
+    if (!list) return;
+    const update = () => {
+        const rewards = [];
+        list.querySelectorAll('.inter-reward-row').forEach(row => {
+            const id = row.querySelector('.inter-reward-id').value.trim();
+            const amount = Number(row.querySelector('.inter-reward-amount').value) || 1;
+            if (id) rewards.push({ id, amount });
+        });
+        interactCreatorState.tile.rewards = rewards;
+        updateInteractCreatorPreview();
+    };
+    list.querySelectorAll('.inter-reward-id, .inter-reward-amount').forEach(inp => inp.oninput = update);
+    list.querySelectorAll('.remove-inter-reward-btn').forEach(btn => {
+        btn.onclick = () => { btn.parentElement.remove(); update(); };
+    });
+    const addBtn = document.getElementById('add-inter-reward-btn');
+    if (addBtn) {
+        addBtn.onclick = () => {
+            const newRow = document.createElement('div');
+            newRow.className = 'inter-reward-row';
+            newRow.style = "display:flex; gap:8px; align-items:center; margin-bottom:4px;";
+            newRow.innerHTML = `
+                <input type="text" class="inter-reward-id" placeholder="Item ID" style="width:160px;">
+                <input type="number" class="inter-reward-amount" value="1" min="1" style="width:60px;">
+                <button type="button" class="remove-inter-reward-btn">Remove</button>
+            `;
+            list.appendChild(newRow);
+            attachInteractRewardListeners();
+        };
+    }
+}
+
+function renderSavedInteractTiles() {
+    const listDiv = document.getElementById('saved-interacts-list');
+    if (!listDiv) return;
+    if (savedInteractTiles.length === 0) {
+        listDiv.innerHTML = "<b>No interactable tiles saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedInteractTiles.map((it, idx) => `
+        <div class="saved-inter-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${it.id || "(Unnamed Interactable)"}</span>
+            <button type="button" class="edit-inter-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-inter-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-inter-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            interactCreatorState.tile = JSON.parse(JSON.stringify(savedInteractTiles[idx]));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="interact"]').classList.add('active');
+            showToolOptions("interact");
+            updateInteractCreatorPreview();
+            renderInteractDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-inter-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedInteractTiles.splice(idx, 1);
+            renderSavedInteractTiles();
+            renderInteractDownloadButtons();
+            if (typeof drawMap === "function") drawMap();
+        };
+    });
+}
+
+function renderInteractDownloadButtons() {
+    const btnDiv = document.getElementById('interact-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `
+        <button id="download-interact-defs" type="button">Download Interactable Tile Definitions</button>
+    `;
+    document.getElementById('download-interact-defs').onclick = () => {
+        const code = savedInteractTiles.map(t => getInteractDefinitionCode(t)).join("\n\n");
+        downloadTextFile("interact_definitions.js", code);
+    };
+}
+
+function getInteractDefinitionCode(t) {
+    const baseFields = [
+        `id: "${t.id}"`,
+        `map: ${t.mapNumber}`,
+        `x: ${t.x}`,
+        `y: ${t.y}`
+    ];
+    let visual = "";
+    if (t.useSprite) {
+        visual = `,
+    spriteSheet: "${t.spriteSheet}",
+    imageW: ${t.imageW},
+    imageH: ${t.imageH},
+    rows: ${t.rows},
+    cols: ${t.cols},
+    animOnTrigger: ${!!t.animOnTrigger},
+    animSpeed: ${t.animSpeed}`;
+    } else if (t.image) {
+        visual = `,
+    image: "${t.image}"`;
+    }
+    let gameplay = `,
+    collision: ${!!t.collision},
+    zIndex: ${t.zIndex}${t.notification ? `,\n    notification: "${t.notification.replace(/"/g, '\\"')}"` : ""}`;
+
+    let dialogueStr = t.dialogue && t.dialogue.length
+        ? `,\n    dialogue: [\n${t.dialogue.map(line => `        "${line.replace(/"/g, '\\"')}"`).join(",\n")}\n    ]`
+        : "";
+
+    let rewardsStr = t.rewards && t.rewards.length
+        ? `,\n    rewards: [${t.rewards.map(r => `{ id: "${r.id}", amount: ${r.amount} }`).join(", ")}]`
+        : "";
+
+    let soundStr = (t.sound && t.sound.enabled && t.sound.file)
+        ? `,\n    sound: { enabled: true, file: "${t.sound.file}.mp3", type: "${t.sound.type}" }`
+        : "";
+
+    return `${t.id}: {
+    ${baseFields.join(",\n    ")}${visual}${gameplay}${dialogueStr}${rewardsStr}${soundStr}
+},`;
+}
+
+function updateInteractCreatorPreview() {
+    const t = interactCreatorState.tile;
+    let visual = "";
+    if (t.useSprite) {
+        visual = `\n  spriteSheet: "${t.spriteSheet}",\n  imageW: ${t.imageW},\n  imageH: ${t.imageH},\n  rows: ${t.rows},\n  cols: ${t.cols},\n  animOnTrigger: ${!!t.animOnTrigger},\n  animSpeed: ${t.animSpeed},`;
+    } else if (t.image) {
+        visual = `\n  image: "${t.image}",`;
+    }
+    let gameplay = `\n  collision: ${!!t.collision},\n  zIndex: ${t.zIndex}${t.notification ? `,\n  notification: "${t.notification.replace(/"/g, '\\"')}",` : ","}`;
+    let dialogueStr = t.dialogue && t.dialogue.length ? `\n  dialogue: [\n${t.dialogue.map(d => `    "${d.replace(/"/g, '\\"')}"`).join(",\n")}\n  ],` : "";
+    let rewardsStr = t.rewards && t.rewards.length ? `\n  rewards: [${t.rewards.map(r => `{ id: "${r.id}", amount: ${r.amount} }`).join(", ")}],` : "";
+    let soundStr = (t.sound && t.sound.enabled && t.sound.file) ? `\n  sound: { enabled: true, file: "${t.sound.file}.mp3", type: "${t.sound.type}" },` : "";
+    const preview =
+`{
+  id: "${t.id}",
+  map: ${t.mapNumber},
+  x: ${t.x},
+  y: ${t.y},${visual}${gameplay}${dialogueStr}${rewardsStr}${soundStr}
+}`;
+    const el = document.getElementById('inter-def-preview');
+    if (el) el.textContent = preview;
+}
+
+function clearInteractInputs() {
+    interactCreatorState.tile = {
+        id: "",
+        mapNumber: 0,
+        x: null,
+        y: null,
+        useSprite: false,
+        image: "",
+        spriteSheet: "",
+        imageW: 0,
+        imageH: 0,
+        rows: 1,
+        cols: 1,
+        animSpeed: 6,
+        animOnTrigger: false,
+        collision: false,
+        zIndex: 0,
+        notification: "",
+        dialogue: [],
+        rewards: [],
+        sound: { enabled: false, file: "", type: "trigger" }
+    };
+    showToolOptions("interact");
+}
+
+
+function attachWorldSpriteCreatorListeners() {
+    const s = worldSpriteCreatorState.sprite;
+    document.getElementById('ws-id').oninput = e => { s.id = e.target.value.trim(); updateWorldSpritePreview(); };
+    document.getElementById('ws-image-name').oninput = e => { s.imageName = e.target.value.trim(); updateWorldSpritePreview(); };
+    document.getElementById('ws-imageW').oninput = e => { s.imageW = parseInt(e.target.value) || 0; updateWorldSpritePreview(); };
+    document.getElementById('ws-imageH').oninput = e => { s.imageH = parseInt(e.target.value) || 0; updateWorldSpritePreview(); };
+    document.getElementById('ws-rows').oninput = e => { s.rows = parseInt(e.target.value) || 1; updateWorldSpritePreview(); };
+    document.getElementById('ws-cols').oninput = e => { s.cols = parseInt(e.target.value) || 1; updateWorldSpritePreview(); };
+    document.getElementById('ws-row').oninput = e => { s.row = parseInt(e.target.value) || 0; updateWorldSpritePreview(); };
+    document.getElementById('ws-animSpeed').oninput = e => { s.animSpeed = parseInt(e.target.value) || 0; updateWorldSpritePreview(); };
+    document.getElementById('ws-zIndex').onchange = e => { s.zIndex = parseInt(e.target.value) || 0; updateWorldSpritePreview(); };
+    document.getElementById('ws-collision').onchange = e => { s.collision = e.target.checked; updateWorldSpritePreview(); };
+    document.getElementById('ws-position-map').oninput = e => { s.positionMap = e.target.value; };
+
+    document.getElementById('ws-add-position-btn').onclick = () => {
+        spriteSelectionStep = 1;
+        updateWorldSpritePositionPrompt();
+    };
+
+    document.getElementById('ws-confirm-btn').onclick = () => {
+        if (!s.id) return;
+        if (!s.imageName) return;
+        const copy = JSON.parse(JSON.stringify(s));
+        savedWorldSprites.push(copy);
+        renderSavedWorldSprites();
+        renderSpriteDownloadButtons();
+        clearWorldSpriteInputs();
+        updateWorldSpritePreview();
+        if (typeof drawMap === "function") drawMap();
+    };
+}
+
+function updateWorldSpritePositionPrompt(text) {
+    const el = document.getElementById('ws-position-prompt');
+    if (!el) return;
+    if (text) { el.textContent = text; return; }
+    el.textContent = spriteSelectionStep === 1
+        ? "Click/tap a tile on the map to add a position."
+        : "";
+}
+
+function renderWorldSpritePositionsList() {
+    const s = worldSpriteCreatorState.sprite;
+    const list = document.getElementById('ws-positions-list');
+    if (!list) return;
+    if (!s.positions.length) {
+        list.innerHTML = "<i>No positions added yet.</i>";
+        return;
+    }
+    list.innerHTML = s.positions.map((p, i) => `
+        <div class="ws-pos-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <span>[map: ${typeof p.map === "string" ? p.map : p.map}, x: ${p.x}, y: ${p.y}]</span>
+            <button type="button" class="ws-pos-remove">Remove</button>
+        </div>
+    `).join("");
+    list.querySelectorAll('.ws-pos-remove').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.parentElement.dataset.idx);
+            worldSpriteCreatorState.sprite.positions.splice(idx, 1);
+            renderWorldSpritePositionsList();
+            updateWorldSpritePreview();
+            if (typeof drawMap === "function") drawMap();
+        };
+    });
+}
+
+function updateWorldSpritePreview() {
+    const s = worldSpriteCreatorState.sprite;
+    const spriteSheetPath = s.imageName ? `assets/img/worldSprites/${s.imageName}.png` : "";
+    const positionsStr = (s.positions || []).map(p => 
+        `    { map: ${typeof p.map === "string" ? `"${p.map}"` : p.map}, x: ${p.x}, y: ${p.y} }`
+    ).join(",\n");
+    const rowStr = s.row ? `\n  row: ${s.row},` : "";
+    const preview =
+`{
+  id: "${s.id}",
+  positions: [
+${positionsStr}
+  ],
+  spriteSheet: "${spriteSheetPath}",
+  imageW: ${s.imageW},
+  imageH: ${s.imageH},
+  rows: ${s.rows},
+  cols: ${s.cols},${rowStr}
+  animSpeed: ${s.animSpeed},
+  zIndex: ${s.zIndex},
+  collision: ${!!s.collision}
+}`;
+    const el = document.getElementById('ws-def-preview');
+    if (el) el.textContent = preview;
+}
+
+function clearWorldSpriteInputs() {
+    worldSpriteCreatorState.sprite = {
+        id: "",
+        imageName: "",
+        imageW: 0,
+        imageH: 0,
+        rows: 1,
+        cols: 1,
+        row: 0,
+        animSpeed: 0,
+        zIndex: 0,
+        collision: false,
+        positions: [],
+        positionMap: ""
+    };
+    showToolOptions("sprite");
+}
+
+function renderSavedWorldSprites() {
+    const listDiv = document.getElementById('saved-sprites-list');
+    if (!listDiv) return;
+    if (savedWorldSprites.length === 0) {
+        listDiv.innerHTML = "<b>No world sprites saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedWorldSprites.map((ws, idx) => `
+        <div class="saved-ws-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${ws.id || "(Unnamed World Sprite)"}</span>
+            <button type="button" class="edit-ws-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-ws-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-ws-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            worldSpriteCreatorState.sprite = JSON.parse(JSON.stringify(savedWorldSprites[idx]));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="sprite"]').classList.add('active');
+            showToolOptions("sprite");
+            updateWorldSpritePreview();
+            renderSpriteDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-ws-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedWorldSprites.splice(idx, 1);
+            renderSavedWorldSprites();
+            renderSpriteDownloadButtons();
+            if (typeof drawMap === "function") drawMap();
+        };
+    });
+}
+
+function renderSpriteDownloadButtons() {
+    const btnDiv = document.getElementById('sprite-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `
+        <button id="download-ws-defs" type="button">Download World Sprite Definitions</button>
+    `;
+    document.getElementById('download-ws-defs').onclick = () => {
+        const code = savedWorldSprites.map(ws => getWorldSpriteDefinitionCode(ws)).join("\n\n");
+        downloadTextFile("world_sprite_definitions.js", code);
+    };
+}
+
+function getWorldSpriteDefinitionCode(ws) {
+    const spriteSheetPath = ws.imageName ? `assets/img/worldSprites/${ws.imageName}.png` : "";
+    const positionsStr = (ws.positions || []).map(p =>
+        `        { map: ${typeof p.map === "string" ? `"${p.map}"` : p.map}, x: ${p.x}, y: ${p.y} }`
+    ).join(",\n");
+    const rowStr = ws.row ? `\n    row: ${ws.row},` : "";
+    return `${ws.id}: {
+    id: "${ws.id}",
+    positions: [
+${positionsStr}
+    ],
+    spriteSheet: "${spriteSheetPath}",
+    imageW: ${ws.imageW},
+    imageH: ${ws.imageH},
+    rows: ${ws.rows},
+    cols: ${ws.cols},${rowStr}
+    animSpeed: ${ws.animSpeed},
+    zIndex: ${ws.zIndex},
+    collision: ${!!ws.collision}
+},`;
+}
+
+function attachItemCreatorListeners() {
+    const it = itemCreatorState.item;
+    const nameEl = document.getElementById('item-name');
+    const descEl = document.getElementById('item-description');
+    const rarEl = document.getElementById('item-rarity');
+    const stkEl = document.getElementById('item-stackable');
+    const useEl = document.getElementById('item-useable');
+    const remEl = document.getElementById('item-removeable');
+    const imgEl = document.getElementById('item-image-name');
+    const sndEn = document.getElementById('item-sound-enabled');
+    const sndFile = document.getElementById('item-sound-file');
+
+    nameEl.oninput = e => {
+        it.name = e.target.value;
+        it.id = normalizeIdFromName(it.name);
+        updateItemPreview();
+    };
+    descEl.oninput = e => { it.description = e.target.value; updateItemPreview(); };
+    rarEl.onchange = e => { it.rarity = e.target.value; updateItemPreview(); };
+    stkEl.onchange = e => { it.stackable = e.target.checked; updateItemPreview(); };
+    useEl.onchange = e => { it.useable = e.target.checked; updateItemPreview(); };
+    remEl.onchange = e => { it.removeable = e.target.checked; updateItemPreview(); };
+    imgEl.oninput = e => { it.imageName = e.target.value.trim(); updateItemPreview(); };
+    sndEn.onchange = e => { it.sound.enabled = e.target.checked; updateItemPreview(); };
+    sndFile.oninput = e => { it.sound.file = e.target.value.trim(); updateItemPreview(); };
+
+    document.getElementById('confirm-item-btn').onclick = () => {
+        const copy = JSON.parse(JSON.stringify(itemCreatorState.item));
+        savedItems.push(copy);
+        renderSavedItems();
+        renderItemDownloadButtons();
+        clearItemInputs();
+        updateItemPreview();
+    };
+}
+
+function updateItemPreview() {
+    const it = itemCreatorState.item;
+    const imageBase = it.imageName || it.id;
+    const soundStr = (it.sound.enabled && it.sound.file) ? `,\n  sound: '${it.sound.file}.mp3'` : "";
+    const preview =
+`{
+  id: "${it.id}",
+  name: "${it.name}",
+  description: "${(it.description || "").replace(/"/g, '\\"')}",
+  image: "assets/img/items/${imageBase}.png",
+  rarity: "${it.rarity}",
+  stackable: ${!!it.stackable},
+  useable: ${!!it.useable},
+  removeable: ${!!it.removeable}${soundStr}
+}`;
+    const el = document.getElementById('item-def-preview');
+    if (el) el.textContent = preview;
+}
+
+function getItemDefinitionCode(it) {
+    const imageBase = it.imageName || it.id;
+    const soundStr = (it.sound && it.sound.enabled && it.sound.file) ? `,\n    sound: '${it.sound.file}.mp3'` : "";
+    return `${it.id}: {
+    id: "${it.id}",
+    name: "${it.name}",
+    description: "${(it.description || "").replace(/"/g, '\\"')}",
+    image: "assets/img/items/${imageBase}.png",
+    rarity: "${it.rarity}",
+    stackable: ${!!it.stackable},
+    useable: ${!!it.useable},
+    removeable: ${!!it.removeable}${soundStr}
+},`;
+}
+
+function clearItemInputs() {
+    itemCreatorState.item = {
+        id: "",
+        name: "",
+        description: "",
+        imageName: "",
+        rarity: "common",
+        stackable: true,
+        useable: false,
+        removeable: true,
+        sound: { enabled: false, file: "" }
+    };
+    showToolOptions("item");
+}
+
+function renderSavedItems() {
+    const listDiv = document.getElementById('saved-items-list');
+    if (!listDiv) return;
+    if (!savedItems.length) {
+        listDiv.innerHTML = "<b>No items saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedItems.map((it, idx) => `
+        <div class="saved-item-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${it.name || "(Unnamed Item)"} <span style="opacity:0.7;">(${it.id})</span></span>
+            <button type="button" class="edit-item-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-item-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-item-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            itemCreatorState.item = JSON.parse(JSON.stringify(savedItems[idx]));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="item"]').classList.add('active');
+            showToolOptions("item");
+            updateItemPreview();
+            renderItemDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-item-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedItems.splice(idx, 1);
+            renderSavedItems();
+            renderItemDownloadButtons();
+        };
+    });
+}
+
+function renderItemDownloadButtons() {
+    const btnDiv = document.getElementById('item-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `<button id="download-item-defs" type="button">Download Item Definitions</button>`;
+    document.getElementById('download-item-defs').onclick = () => {
+        const code = savedItems.map(it => getItemDefinitionCode(it)).join("\n\n");
+        downloadTextFile("item_definitions.js", code);
+    };
+}
+
+function renderSkillStatsList(kind) { // kind: 'buffs' | 'drawbacks'
+    const s = skillCreatorState.skill;
+    const listDiv = document.getElementById(kind === 'buffs' ? 'skill-buffs-list' : 'skill-drawbacks-list');
+    if (!listDiv) return;
+    const arr = s[kind] || [];
+    listDiv.innerHTML = arr.map((kv, i) => `
+        <div class="skill-${kind}-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <input type="text" class="skill-${kind}-key" value="${kv.key || ''}" placeholder="stat key (e.g. attack, defence, speed)" style="width:220px;">
+            <input type="number" class="skill-${kind}-value" value="${kv.value ?? 0}" step="1" style="width:100px;">
+            <button type="button" class="remove-skill-${kind}-btn">Remove</button>
+        </div>
+    `).join("");
+
+    // Attach listeners
+    const sync = () => {
+        const newArr = [];
+        listDiv.querySelectorAll(`.skill-${kind}-row`).forEach(row => {
+            const key = row.querySelector(`.skill-${kind}-key`).value.trim();
+            const value = Number(row.querySelector(`.skill-${kind}-value`).value);
+            if (key) newArr.push({ key, value });
+        });
+        s[kind] = newArr;
+        updateSkillPreview();
+    };
+    listDiv.querySelectorAll(`.skill-${kind}-key, .skill-${kind}-value`).forEach(inp => inp.oninput = sync);
+    listDiv.querySelectorAll(`.remove-skill-${kind}-btn`).forEach(btn => {
+        btn.onclick = () => { btn.parentElement.remove(); sync(); };
+    });
+
+    const addBtnId = kind === 'buffs' ? 'add-skill-buff-btn' : 'add-skill-drawback-btn';
+    const addBtn = document.getElementById(addBtnId);
+    if (addBtn) {
+        addBtn.onclick = () => {
+            s[kind].push({ key: "", value: 0 });
+            renderSkillStatsList(kind);
+            updateSkillPreview();
+        };
+    }
+}
+
+function attachSkillCreatorListeners() {
+    const s = skillCreatorState.skill;
+    document.getElementById('skill-name').oninput = e => {
+        s.name = e.target.value;
+        s.id = normalizeIdFromName(s.name);
+        updateSkillPreview();
+    };
+    document.getElementById('skill-description').oninput = e => { s.description = e.target.value; updateSkillPreview(); };
+    document.getElementById('skill-pool').onchange = e => { s.pool = e.target.value; updateSkillPreview(); };
+    document.getElementById('skill-chance').oninput = e => { s.chance = parseFloat(e.target.value) || 0; updateSkillPreview(); };
+    document.getElementById('skill-maxLevel').oninput = e => { s.maxLevel = parseInt(e.target.value) || 1; updateSkillPreview(); };
+    document.getElementById('skill-rarity').onchange = e => { s.rarity = e.target.value; updateSkillPreview(); };
+    document.getElementById('skill-image-name').oninput = e => { s.imageName = e.target.value.trim(); updateSkillPreview(); };
+
+    document.getElementById('confirm-skill-btn').onclick = () => {
+        const copy = JSON.parse(JSON.stringify(skillCreatorState.skill));
+        savedSkills.push(copy);
+        renderSavedSkills();
+        renderSkillDownloadButtons();
+        clearSkillInputs();
+        updateSkillPreview();
+    };
+}
+
+function updateSkillPreview() {
+    const s = skillCreatorState.skill;
+    const imageBase = s.imageName || s.id;
+    const buffsObjStr = (s.buffs || []).map(kv => `    ${kv.key}: ${kv.value}`).join(",\n");
+    const drawObjStr = (s.drawbacks || []).map(kv => `    ${kv.key}: ${kv.value}`).join(",\n");
+    const preview =
+`{
+  id: "${s.id}",
+  name: "${s.name}",
+  img: "assets/img/skills/${imageBase}.png",
+  description: "${(s.description || "").replace(/"/g, '\\"')}",
+  pool: "${s.pool}",
+  chance: ${s.chance},
+  buffs: {
+${buffsObjStr}
+  },
+  drawbacks: {
+${drawObjStr}
+  },
+  maxLevel: ${s.maxLevel},
+  rarity: "${s.rarity}"
+}`;
+    const el = document.getElementById('skill-def-preview');
+    if (el) el.textContent = preview;
+}
+
+function getSkillDefinitionCode(s) {
+    const imageBase = s.imageName || s.id;
+    const buffsObjStr = (s.buffs || []).map(kv => `        ${kv.key}: ${kv.value}`).join(",\n");
+    const drawObjStr = (s.drawbacks || []).map(kv => `        ${kv.key}: ${kv.value}`).join(",\n");
+    return `${s.id}: {
+    id: "${s.id}",
+    name: "${s.name}",
+    img: "assets/img/skills/${imageBase}.png",
+    description: "${(s.description || "").replace(/"/g, '\\"')}",
+    pool: "${s.pool}",
+    chance: ${s.chance},
+    buffs: {
+${buffsObjStr}
+    },
+    drawbacks: {
+${drawObjStr}
+    },
+    maxLevel: ${s.maxLevel},
+    rarity: "${s.rarity}"
+},`;
+}
+
+function clearSkillInputs() {
+    skillCreatorState.skill = {
+        id: "",
+        name: "",
+        description: "",
+        imageName: "",
+        pool: "blue",
+        chance: 1.0,
+        maxLevel: 20,
+        rarity: "common",
+        buffs: [],
+        drawbacks: []
+    };
+    showToolOptions("skill");
+}
+
+function renderSavedSkills() {
+    const listDiv = document.getElementById('saved-skills-list');
+    if (!listDiv) return;
+    if (!savedSkills.length) {
+        listDiv.innerHTML = "<b>No skills saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedSkills.map((sk, idx) => `
+        <div class="saved-skill-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${sk.name || "(Unnamed Skill)"} <span style="opacity:0.7;">(${sk.id})</span></span>
+            <button type="button" class="edit-skill-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-skill-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-skill-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            skillCreatorState.skill = JSON.parse(JSON.stringify(savedSkills[idx]));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="skill"]').classList.add('active');
+            showToolOptions("skill");
+            updateSkillPreview();
+            renderSkillDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-skill-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedSkills.splice(idx, 1);
+            renderSavedSkills();
+            renderSkillDownloadButtons();
+        };
+    });
+}
+
+function renderSkillDownloadButtons() {
+    const btnDiv = document.getElementById('skill-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `<button id="download-skill-defs" type="button">Download Skill Definitions</button>`;
+    document.getElementById('download-skill-defs').onclick = () => {
+        const code = savedSkills.map(sk => getSkillDefinitionCode(sk)).join("\n\n");
+        downloadTextFile("skill_definitions.js", code);
+    };
 }
