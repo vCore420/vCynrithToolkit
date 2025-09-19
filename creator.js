@@ -27,6 +27,25 @@ const creatorState = {
 
 let savedNpcs = [];
 
+const enemyCreatorState = {
+    enemy: {
+        id: "",
+        name: "",
+        sprite: "assets/img/enemy/enemy_01.png",
+        moveSpeed: 1.0,
+        distance: 3,
+        maxHealth: 20,
+        attack: 5,
+        defense: 2,
+        speed: 1,
+        xpGain: 10,
+        loot: [],
+        spawns: []
+    }
+};
+
+let savedEnemies = [];
+
 // --- Creator Tab Render ---
 function renderCreatorTab() {
     const tab = document.getElementById('creator-tab');
@@ -47,6 +66,8 @@ function renderCreatorTab() {
         </div>
         <div id="saved-npcs-list" style="margin-top:24px;"></div>
         <div id="npc-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-enemies-list" style="margin-top:24px;"></div>
+        <div id="enemy-download-buttons" style="margin-top:16px;"></div>
     `;
 
     document.getElementById('map-json-upload').onchange = function(e) {
@@ -122,7 +143,7 @@ function showToolPanel() {
     const sidebar = document.getElementById('creator-tool-sidebar');
     sidebar.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:10px;">
-            <button class="tool-btn active" data-tool="npc">NPC Creator</button>
+            <button class="tool-btn" data-tool="npc">NPC Creator</button>
             <button class="tool-btn" data-tool="enemy">Enemy Creator</button>
             <button class="tool-btn" data-tool="trigger">Trigger Tile Creator</button>
             <button class="tool-btn" data-tool="interact">Interactable Tile Creator</button>
@@ -138,119 +159,176 @@ function showToolPanel() {
             showToolOptions(btn.dataset.tool);
         };
     });
-    showToolOptions("npc");
 }
 
 // --- Tool Options (State Driven) ---
 function showToolOptions(tool) {
     const optionsDiv = document.getElementById('creator-tool-options');
-    if (tool !== 'npc') {
+    if (tool !== 'npc' && tool !== 'enemy') {
         optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
             <div>Tool options and inputs will appear here.</div>`;
         return;
     }
-    const npc = creatorState.npc;
-    optionsDiv.innerHTML = `
-        <h3>NPC Creator</h3>
-        <div style="display:flex; flex-direction:column; gap:12px; max-width:520px;">
-            <label>
-                Character Name:<br>
-                <input type="text" id="npc-name" value="${npc.name}" placeholder="e.g. Mira the Gatherer" style="width:100%;" />
-            </label>
-            <label>
-                Sprite:<br>
-                <select id="npc-sprite-gender">
-                    <option value="m" ${npc.spriteGender === "m" ? "selected" : ""}>Male</option>
-                    <option value="f" ${npc.spriteGender === "f" ? "selected" : ""}>Female</option>
-                </select>
-                <select id="npc-sprite-number">
-                    ${Array.from({length:9}, (_,i) => `<option value="${i+1}" ${npc.spriteNumber == (i+1) ? "selected" : ""}>${i+1}</option>`).join("")}
-                </select>
-            </label>
-            <label>
-                Map Number:<br>
-                <input type="number" id="npc-map-number" min="0" max="99" value="${npc.mapNumber}" style="width:80px;" />
-            </label>
-            <label>
-                Default Dialogue:<br>
-                <textarea id="npc-dialogue-default" rows="3" style="width:100%;" placeholder="One line per dialogue">${npc.dialogueDefault}</textarea>
-            </label>
-            <button id="npc-set-wander-btn" style="margin-top:8px;">Set Wander Area & Spawn</button>
-            <div id="npc-wander-preview" style="margin-top:8px;"></div>
-            <label style="margin-top:8px;">
-                <input type="checkbox" id="npc-has-quest" ${npc.hasQuest ? "checked" : ""}/> This NPC gives a quest
-            </label>
-            ${npc.hasQuest ? `
-            <div id="npc-quest-section" style="margin-top:12px; background:none; border-radius:8px; padding:12px; display:flex; flex-direction:column;">
-                <h4>Quest Data</h4>
+    if (tool === 'npc') {
+        const npc = creatorState.npc;
+        optionsDiv.innerHTML = `
+            <h3>NPC Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:520px;">
                 <label>
-                    Quest ID:<br>
-                    <input type="text" id="quest-id" value="${npc.questId}" style="width:100%;" placeholder="e.g. mira_gatherer" />
+                    Character Name:<br>
+                    <input type="text" id="npc-name" value="${npc.name}" placeholder="e.g. Mira the Gatherer" style="width:100%;" />
                 </label>
                 <label>
-                    Quest Name:<br>
-                    <input type="text" id="quest-name" value="${npc.questName}" style="width:100%;" placeholder="e.g. Dewleaf Gathering" />
-                </label>
-                <label>
-                    Quest Description:<br>
-                    <textarea id="quest-description" rows="2" style="width:100%;" placeholder="Quest description">${npc.questDescription}</textarea>
-                </label>
-                <label>
-                    <input type="checkbox" id="quest-redoable" ${npc.questRedoable ? "checked" : ""}/> Quest is redoable
-                </label>
-                <label>
-                    <input type="checkbox" id="npc-forced" ${npc.npcForced ? "checked" : ""}/> Forced encounter
-                </label>
-                <div id="npc-forced-section" style="display:${npc.npcForced ? "flex" : "none"}; margin-top:8px;">
-                    <label>Trigger Tiles (comma separated, e.g. 44,46 45,46):<br>
-                        <input type="text" id="npc-trigger-tiles" value="${npc.triggerTiles}" style="width:100%;" placeholder="x,y x,y ..." />
-                    </label>
-                </div>
-                <label>
-                    Quest Given Dialogue:<br>
-                    <textarea id="quest-given-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questGiven}</textarea>
-                </label>
-                <label>
-                    Quest Incomplete Dialogue:<br>
-                    <textarea id="quest-incomplete-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questIncomplete}</textarea>
-                </label>
-                <label>
-                    Quest Complete Dialogue:<br>
-                    <textarea id="quest-complete-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questComplete}</textarea>
-                </label>
-                <label>
-                    Quest Type:<br>
-                    <select id="quest-type">
-                        <option value="gift" ${npc.questType === "gift" ? "selected" : ""}>Gift</option>
-                        <option value="itemCollect" ${npc.questType === "itemCollect" ? "selected" : ""}>Item Collect</option>
-                        <option value="enemyDefeat" ${npc.questType === "enemyDefeat" ? "selected" : ""}>Enemy Defeat</option>
-                        <option value="statBuild" ${npc.questType === "statBuild" ? "selected" : ""}>Stat Build</option>
-                        <option value="interactTiles" ${npc.questType === "interactTiles" ? "selected" : ""}>Interact Tiles</option>
+                    Sprite:<br>
+                    <select id="npc-sprite-gender">
+                        <option value="m" ${npc.spriteGender === "m" ? "selected" : ""}>Male</option>
+                        <option value="f" ${npc.spriteGender === "f" ? "selected" : ""}>Female</option>
+                    </select>
+                    <select id="npc-sprite-number">
+                        ${Array.from({length:9}, (_,i) => `<option value="${i+1}" ${npc.spriteNumber == (i+1) ? "selected" : ""}>${i+1}</option>`).join("")}
                     </select>
                 </label>
-                <div id="quest-type-options" style="margin-top:8px;">
-                    ${renderQuestTypeOptions(npc)}
-                </div>
                 <label>
-                    Rewards:<br>
-                    <div id="quest-rewards-list" style="margin-bottom:8px;"></div>
-                    <button id="add-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
+                    Map Number:<br>
+                    <input type="number" id="npc-map-number" min="0" max="99" value="${npc.mapNumber}" style="width:80px;" />
                 </label>
+                <label>
+                    Default Dialogue:<br>
+                    <textarea id="npc-dialogue-default" rows="3" style="width:100%;" placeholder="One line per dialogue">${npc.dialogueDefault}</textarea>
+                </label>
+                <button id="npc-set-wander-btn" style="margin-top:8px;">Set Wander Area & Spawn</button>
+                <div id="npc-wander-preview" style="margin-top:8px;"></div>
+                <label style="margin-top:8px;">
+                    <input type="checkbox" id="npc-has-quest" ${npc.hasQuest ? "checked" : ""}/> This NPC gives a quest
+                </label>
+                ${npc.hasQuest ? `
+                <div id="npc-quest-section" style="margin-top:12px; background:none; border-radius:8px; padding:12px; display:flex; flex-direction:column;">
+                    <h4>Quest Data</h4>
+                    <label>
+                        Quest ID:<br>
+                        <input type="text" id="quest-id" value="${npc.questId}" style="width:100%;" placeholder="e.g. mira_gatherer" />
+                    </label>
+                    <label>
+                        Quest Name:<br>
+                        <input type="text" id="quest-name" value="${npc.questName}" style="width:100%;" placeholder="e.g. Dewleaf Gathering" />
+                    </label>
+                    <label>
+                        Quest Description:<br>
+                        <textarea id="quest-description" rows="2" style="width:100%;" placeholder="Quest description">${npc.questDescription}</textarea>
+                    </label>
+                    <label>
+                        <input type="checkbox" id="quest-redoable" ${npc.questRedoable ? "checked" : ""}/> Quest is redoable
+                    </label>
+                    <label>
+                        <input type="checkbox" id="npc-forced" ${npc.npcForced ? "checked" : ""}/> Forced encounter
+                    </label>
+                    <div id="npc-forced-section" style="display:${npc.npcForced ? "flex" : "none"}; margin-top:8px;">
+                        <label>Trigger Tiles (comma separated, e.g. 44,46 45,46):<br>
+                            <input type="text" id="npc-trigger-tiles" value="${npc.triggerTiles}" style="width:100%;" placeholder="x,y x,y ..." />
+                        </label>
+                    </div>
+                    <label>
+                        Quest Given Dialogue:<br>
+                        <textarea id="quest-given-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questGiven}</textarea>
+                    </label>
+                    <label>
+                        Quest Incomplete Dialogue:<br>
+                        <textarea id="quest-incomplete-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questIncomplete}</textarea>
+                    </label>
+                    <label>
+                        Quest Complete Dialogue:<br>
+                        <textarea id="quest-complete-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questComplete}</textarea>
+                    </label>
+                    <label>
+                        Quest Type:<br>
+                        <select id="quest-type">
+                            <option value="gift" ${npc.questType === "gift" ? "selected" : ""}>Gift</option>
+                            <option value="itemCollect" ${npc.questType === "itemCollect" ? "selected" : ""}>Item Collect</option>
+                            <option value="enemyDefeat" ${npc.questType === "enemyDefeat" ? "selected" : ""}>Enemy Defeat</option>
+                            <option value="statBuild" ${npc.questType === "statBuild" ? "selected" : ""}>Stat Build</option>
+                            <option value="interactTiles" ${npc.questType === "interactTiles" ? "selected" : ""}>Interact Tiles</option>
+                        </select>
+                    </label>
+                    <div id="quest-type-options" style="margin-top:8px;">
+                        ${renderQuestTypeOptions(npc)}
+                    </div>
+                    <label>
+                        Rewards:<br>
+                        <div id="quest-rewards-list" style="margin-bottom:8px;"></div>
+                        <button id="add-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
+                    </label>
+                </div>
+                ` : ""}
+                <button id="confirm-npc-btn" style="margin-top:16px;">Confirm NPC</button>
+                <h4>NPC Definition Preview</h4>
+                <pre id="npc-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+                <div id="quest-def-preview-container" style="margin-top:12px;">
+                    <h4>Quest Definition Preview</h4>
+                    <pre id="quest-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+                </div>
             </div>
-            ` : ""}
-            <button id="confirm-npc-btn" style="margin-top:16px;">Confirm NPC</button>
-            <h4>NPC Definition Preview</h4>
-            <pre id="npc-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
-            <div id="quest-def-preview-container" style="margin-top:12px;">
-                <h4>Quest Definition Preview</h4>
-                <pre id="quest-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+        `;
+        attachCreatorListeners();
+        updateCreatorPreview();
+    } else if (tool === 'enemy') {
+        const enemy = enemyCreatorState.enemy;
+        optionsDiv.innerHTML = `
+            <h3>Enemy Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:520px;">
+                <label>
+                    Name:<br>
+                    <input type="text" id="enemy-name" value="${enemy.name}" placeholder="e.g. Displaced Shadow" style="width:100%;" />
+                </label>
+                <label>
+                    Sprite Name:<br>
+                    <input type="text" id="enemy-sprite-name" value="${enemy.spriteName || ""}" placeholder="e.g. displaced_shadow" style="width:100%;" />
+                </label>
+                <label>
+                    Move Speed:<br>
+                    <input type="number" id="enemy-moveSpeed" value="${enemy.moveSpeed}" step="0.1" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    Hostile Distance:<br>
+                    <input type="number" id="enemy-distance" value="${enemy.distance}" step="0.1" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    Max Health:<br>
+                    <input type="number" id="enemy-maxHealth" value="${enemy.maxHealth}" min="1" style="width:80px;" />
+                </label>
+                <label>
+                    Attack:<br>
+                    <input type="number" id="enemy-attack" value="${enemy.attack}" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    Defense:<br>
+                    <input type="number" id="enemy-defense" value="${enemy.defense}" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    Attack Speed:<br>
+                    <input type="number" id="enemy-speed" value="${enemy.speed}" step="0.1" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    XP Gain:<br>
+                    <input type="number" id="enemy-xpGain" value="${enemy.xpGain}" min="0" style="width:80px;" />
+                </label>
+                <label>
+                    Loot Drops:<br>
+                    <div id="enemy-loot-list" style="margin-bottom:8px;"></div>
+                    <button id="add-enemy-loot-btn" type="button" style="margin-top:4px;">Add Loot</button>
+                </label>
+                <button id="enemy-set-spawn-btn" style="margin-top:8px;">Add Spawn Location</button>
+                <div id="enemy-spawn-preview" style="margin-top:8px;"></div>
+                <button id="confirm-enemy-btn" style="margin-top:16px;">Confirm Enemy</button>
+                <h4>Enemy Definition Preview</h4>
+                <pre id="enemy-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
-        </div>
-    `;
-
-    // Attach listeners for all inputs
-    attachCreatorListeners();
-    updateCreatorPreview();
+        `;
+        attachEnemyCreatorListeners();
+        updateEnemyCreatorPreview();
+    } else {
+        optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
+            <div>Tool options and inputs will appear here.</div>`;
+    }
 }
 
 // --- Quest Type Options Renderer ---
@@ -284,6 +362,9 @@ function renderQuestTypeOptions(npc) {
 // Add these variables at the top of your file:
 let wanderSelectionStep = 0; // 0 = not selecting, 1 = first corner, 2 = second corner, 3 = spawn
 let wanderFirstCorner = null;
+let enemySpawnSelectionStep = 0; // 0 = not selecting, 1 = first corner, 2 = second corner, 3 = spawn
+let enemySpawnFirstCorner = null;
+let enemyCurrentWanderArea = null;
 
 // --- Attach Listeners ---
 function attachCreatorListeners() {
@@ -398,6 +479,9 @@ function renderSavedNpcs() {
         btn.onclick = () => {
             const idx = Number(btn.dataset.idx);
             creatorState.npc = JSON.parse(JSON.stringify(savedNpcs[idx]));
+            // Switch to NPC tab
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="npc"]').classList.add('active');
             showToolOptions("npc");
             updateCreatorPreview();
             updateWanderPrompt();
@@ -410,6 +494,8 @@ function renderSavedNpcs() {
             savedNpcs.splice(idx, 1);
             renderSavedNpcs();
             renderNpcDownloadButtons();
+            renderSavedEnemies();
+            renderEnemyDownloadButtons();
         };
     });
 }
@@ -798,7 +884,6 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.stroke();
             ctx.restore();
         }
-        ctx.restore();
         savedNpcs.forEach(npc => {
             // Highlight wander area
             if (npc.wanderArea && npc.wanderArea.tiles) {
@@ -824,6 +909,70 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                 ctx.restore();
             }
         });
+        // Highlight enemy selection area during selection
+        if (enemySpawnSelectionStep === 2 && enemySpawnFirstCorner) {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#ff4444";
+            ctx.fillRect(enemySpawnFirstCorner.x * tileSize, enemySpawnFirstCorner.y * tileSize, tileSize, tileSize);
+            ctx.restore();
+        }
+        if (enemyCurrentWanderArea && enemyCurrentWanderArea.tiles) {
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.fillStyle = "#ff4444";
+            enemyCurrentWanderArea.tiles.forEach(({x, y}) => {
+                ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+            });
+            ctx.restore();
+        }
+        enemyCreatorState.enemy.spawns.forEach(spawn => {
+            if (spawn.wanderArea && spawn.wanderArea.tiles) {
+                ctx.save();
+                ctx.globalAlpha = 0.25;
+                ctx.fillStyle = "#ff4444";
+                spawn.wanderArea.tiles.forEach(({x, y}) => {
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                });
+                ctx.restore();
+            }
+            ctx.save();
+            ctx.globalAlpha = 0.85;
+            ctx.strokeStyle = "#ff4444";
+            ctx.lineWidth = 3;
+            const centerX = spawn.x * tileSize + tileSize / 2;
+            const centerY = spawn.y * tileSize + tileSize / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        });
+        savedEnemies.forEach(enemy => {
+            enemy.spawns.forEach(spawn => {
+                // Draw wander area highlight
+                if (spawn.wanderArea && spawn.wanderArea.tiles) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.25;
+                    ctx.fillStyle = "#ff4444";
+                    spawn.wanderArea.tiles.forEach(({x, y}) => {
+                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    });
+                    ctx.restore();
+                }
+                // Draw spawn marker
+                ctx.save();
+                ctx.globalAlpha = 0.85;
+                ctx.strokeStyle = "#ff4444";
+                ctx.lineWidth = 3;
+                const centerX = spawn.x * tileSize + tileSize / 2;
+                const centerY = spawn.y * tileSize + tileSize / 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            });
+        });
+        ctx.restore();
     }
 
     // Dragging logic
@@ -864,9 +1013,6 @@ function showCreatorMap(mapData, loadedAssets = {}) {
     };
 
     canvas.onclick = function(e) {
-        // Only handle if we're in selection mode
-        if (wanderSelectionStep === 0) return;
-    
         // Get tile coordinates
         const rect = canvas.getBoundingClientRect();
         const mouseX = (e.clientX - rect.left - creatorMapOffset.x) / creatorMapZoom;
@@ -875,43 +1021,99 @@ function showCreatorMap(mapData, loadedAssets = {}) {
         const x = Math.floor(mouseX / tileSize);
         const y = Math.floor(mouseY / tileSize);
     
-        if (wanderSelectionStep === 1) {
-            wanderFirstCorner = { x, y };
-            wanderSelectionStep = 2;
-            updateWanderPrompt();
-            drawMap();
-        }  else if (wanderSelectionStep === 2) {
-            // Calculate corners
-            const x1 = Math.min(wanderFirstCorner.x, x);
-            const y1 = Math.min(wanderFirstCorner.y, y);
-            const x2 = Math.max(wanderFirstCorner.x, x);
-            const y2 = Math.max(wanderFirstCorner.y, y);
-            const tiles = [];
-            for (let tx = x1; tx <= x2; tx++) {
-                for (let ty = y1; ty <= y2; ty++) {
-                    tiles.push({ x: tx, y: ty });
+        // --- NPC Wander/Spawn Selection ---
+        if (wanderSelectionStep !== 0) {
+            if (wanderSelectionStep === 1) {
+                wanderFirstCorner = { x, y };
+                wanderSelectionStep = 2;
+                updateWanderPrompt();
+                drawMap();
+            } else if (wanderSelectionStep === 2) {
+                const x1 = Math.min(wanderFirstCorner.x, x);
+                const y1 = Math.min(wanderFirstCorner.y, y);
+                const x2 = Math.max(wanderFirstCorner.x, x);
+                const y2 = Math.max(wanderFirstCorner.y, y);
+                const tiles = [];
+                for (let tx = x1; tx <= x2; tx++) {
+                    for (let ty = y1; ty <= y2; ty++) {
+                        tiles.push({ x: tx, y: ty });
+                    }
                 }
-            }
-            creatorState.npc.wanderArea = { x1, y1, x2, y2, tiles };
-            wanderSelectionStep = 3;
-            updateCreatorPreview();
-            updateWanderPrompt();
-            drawMap();
-        } else if (wanderSelectionStep === 3) {
-            const area = creatorState.npc.wanderArea;
-            if (
-                area &&
-                x >= area.x1 && x <= area.x2 &&
-                y >= area.y1 && y <= area.y2
-            ) {
-                creatorState.npc.spawn = { x, y };
-                wanderSelectionStep = 0;
+                creatorState.npc.wanderArea = { x1, y1, x2, y2, tiles };
+                wanderSelectionStep = 3;
                 updateCreatorPreview();
                 updateWanderPrompt();
                 drawMap();
-            } else {
-                const previewDiv = document.getElementById('npc-wander-preview');
-                if (previewDiv) previewDiv.textContent = "Spawn must be inside the wander area. Try again.";
+            } else if (wanderSelectionStep === 3) {
+                const area = creatorState.npc.wanderArea;
+                if (
+                    area &&
+                    x >= area.x1 && x <= area.x2 &&
+                    y >= area.y1 && y <= area.y2
+                ) {
+                    creatorState.npc.spawn = { x, y };
+                    wanderSelectionStep = 0;
+                    updateCreatorPreview();
+                    updateWanderPrompt();
+                    drawMap();
+                } else {
+                    const previewDiv = document.getElementById('npc-wander-preview');
+                    if (previewDiv) previewDiv.textContent = "Spawn must be inside the wander area. Try again.";
+                }
+            }
+            // Do NOT return here, allow enemy selection to work if NPC selection is not active
+        }
+    
+        // --- Enemy Spawn Selection ---
+        if (enemySpawnSelectionStep !== 0) {
+            if (enemySpawnSelectionStep === 1) {
+                enemySpawnFirstCorner = { x, y };
+                enemySpawnSelectionStep = 2;
+                updateEnemySpawnPrompt();
+                drawMap();
+            } else if (enemySpawnSelectionStep === 2) {
+                const x1 = Math.min(enemySpawnFirstCorner.x, x);
+                const y1 = Math.min(enemySpawnFirstCorner.y, y);
+                const x2 = Math.max(enemySpawnFirstCorner.x, x);
+                const y2 = Math.max(enemySpawnFirstCorner.y, y);
+                const tiles = [];
+                for (let tx = x1; tx <= x2; tx++) {
+                    for (let ty = y1; ty <= y2; ty++) {
+                        tiles.push({ x: tx, y: ty });
+                    }
+                }
+                enemyCurrentWanderArea = { x1, y1, x2, y2, tiles };
+                enemySpawnSelectionStep = 3;
+                updateEnemySpawnPrompt();
+                drawMap();
+            } else if (enemySpawnSelectionStep === 3) {
+                const area = enemyCurrentWanderArea;
+                if (
+                    area &&
+                    x >= area.x1 && x <= area.x2 &&
+                    y >= area.y1 && y <= area.y2
+                ) {
+                    enemyCreatorState.enemy.spawns.push({
+                        map: typeof enemyCreatorState.enemy.mapNumber !== "undefined" ? enemyCreatorState.enemy.mapNumber : 0,
+                        x, y,
+                        wanderArea: {
+                            x1: area.x1,
+                            y1: area.y1,
+                            x2: area.x2,
+                            y2: area.y2,
+                            tiles: area.tiles // <-- Add this line!
+                        }
+                    });
+                    enemySpawnSelectionStep = 0;
+                    enemySpawnFirstCorner = null;
+                    enemyCurrentWanderArea = null;
+                    updateEnemySpawnPrompt();
+                    updateEnemyCreatorPreview();
+                    drawMap();
+                } else {
+                    const previewDiv = document.getElementById('enemy-spawn-preview');
+                    if (previewDiv) previewDiv.textContent = "Spawn must be inside the wander area. Try again.";
+                }
             }
         }
     };
@@ -1085,4 +1287,211 @@ function renderTileMakerTab() {
     `;
     // Now call a function to initialize the generator controls and logic
     setupTileMaker();
+}
+
+// Enemy tool
+function renderEnemyLootList() {
+    const loot = enemyCreatorState.enemy.loot || [];
+    const listDiv = document.getElementById('enemy-loot-list');
+    if (!listDiv) return;
+    listDiv.innerHTML = loot.map((l, i) => `
+        <div class="loot-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <input type="text" class="loot-item" value="${l.item || ''}" placeholder="Item ID" style="width:120px;">
+            <input type="number" class="loot-chance" value="${l.chance || 100}" min="1" max="100" style="width:60px;" placeholder="Chance">
+            <input type="text" class="loot-amount" value="${Array.isArray(l.amount) ? l.amount.join(',') : l.amount}" placeholder="Amount (e.g. 1,2)" style="width:60px;">
+            <button type="button" class="remove-loot-btn">Remove</button>
+        </div>
+    `).join("");
+}
+function attachEnemyLootListeners() {
+    const list = document.getElementById('enemy-loot-list');
+    if (!list) return;
+    list.querySelectorAll('.loot-item, .loot-chance, .loot-amount').forEach(input => {
+        input.oninput = () => {
+            const loot = [];
+            list.querySelectorAll('.loot-row').forEach(row => {
+                const item = row.querySelector('.loot-item').value.trim();
+                const chance = Number(row.querySelector('.loot-chance').value) || 100;
+                const amountStr = row.querySelector('.loot-amount').value.trim();
+                let amount = amountStr.includes(',') ? amountStr.split(',').map(Number) : [Number(amountStr) || 1];
+                if (item) loot.push({ item, chance, amount });
+            });
+            enemyCreatorState.enemy.loot = loot;
+            updateEnemyCreatorPreview();
+        };
+    });
+    list.querySelectorAll('.remove-loot-btn').forEach(btn => {
+        btn.onclick = () => {
+            btn.parentElement.remove();
+            list.querySelector('.loot-item')?.dispatchEvent(new Event('input'));
+        };
+    });
+    const addBtn = document.getElementById('add-enemy-loot-btn');
+    if (addBtn) {
+        addBtn.onclick = () => {
+            const newRow = document.createElement('div');
+            newRow.className = 'loot-row';
+            newRow.style = "display:flex; gap:8px; align-items:center; margin-bottom:4px;";
+            newRow.innerHTML = `
+                <input type="text" class="loot-item" placeholder="Item ID" style="width:120px;">
+                <input type="number" class="loot-chance" value="100" min="1" max="100" style="width:60px;" placeholder="Chance">
+                <input type="text" class="loot-amount" value="1" style="width:60px;" placeholder="Amount (e.g. 1,2)">
+                <button type="button" class="remove-loot-btn">Remove</button>
+            `;
+            list.appendChild(newRow);
+            attachEnemyLootListeners();
+        };
+    }
+}
+
+function attachEnemyCreatorListeners() {
+    const enemy = enemyCreatorState.enemy;
+    document.getElementById('enemy-name').oninput = e => {
+        enemy.name = e.target.value;
+        enemy.id = e.target.value
+            .toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_]/g, '');
+        updateEnemyCreatorPreview();
+    };
+    document.getElementById('enemy-sprite-name').oninput = e => {
+        enemy.spriteName = e.target.value;
+        updateEnemyCreatorPreview();
+    };
+    document.getElementById('enemy-moveSpeed').oninput = e => { enemy.moveSpeed = parseFloat(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-distance').oninput = e => { enemy.distance = parseFloat(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-maxHealth').oninput = e => { enemy.maxHealth = parseInt(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-attack').oninput = e => { enemy.attack = parseInt(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-defense').oninput = e => { enemy.defense = parseInt(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-speed').oninput = e => { enemy.speed = parseFloat(e.target.value); updateEnemyCreatorPreview(); };
+    document.getElementById('enemy-xpGain').oninput = e => { enemy.xpGain = parseInt(e.target.value); updateEnemyCreatorPreview(); };
+    renderEnemyLootList();
+    attachEnemyLootListeners();
+
+    document.getElementById('enemy-set-spawn-btn').onclick = function() {
+        enemySpawnSelectionStep = 1;
+        enemySpawnFirstCorner = null;
+        enemyCurrentWanderArea = null;
+        updateEnemySpawnPrompt();
+    };
+
+    document.getElementById('confirm-enemy-btn').onclick = () => {
+        const enemyCopy = JSON.parse(JSON.stringify(enemyCreatorState.enemy));
+        savedEnemies.push(enemyCopy);
+        renderSavedEnemies();
+        renderEnemyDownloadButtons();
+        clearEnemyInputs();
+        updateEnemyCreatorPreview();
+    };
+}
+
+function updateEnemySpawnPrompt() {
+    const previewDiv = document.getElementById('enemy-spawn-preview');
+    if (!previewDiv) return;
+    switch (enemySpawnSelectionStep) {
+        case 1:
+            previewDiv.textContent = "Step 1: Click the TOP-LEFT tile for the enemy's wander area.";
+            break;
+        case 2:
+            previewDiv.textContent = "Step 2: Click the BOTTOM-RIGHT tile for the wander area.";
+            break;
+        case 3:
+            previewDiv.textContent = "Step 3: Click a tile INSIDE the wander area for the spawn location.";
+            break;
+        default:
+            previewDiv.textContent = "";
+    }
+}
+
+function renderSavedEnemies() {
+    const listDiv = document.getElementById('saved-enemies-list');
+    if (!listDiv) return;
+    if (savedEnemies.length === 0) {
+        listDiv.innerHTML = "<b>No enemies saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedEnemies.map((enemy, idx) => `
+        <div class="saved-enemy-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${enemy.name || "(Unnamed Enemy)"}</span>
+            <button type="button" class="edit-enemy-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-enemy-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    listDiv.querySelectorAll('.edit-enemy-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            enemyCreatorState.enemy = JSON.parse(JSON.stringify(savedEnemies[idx]));
+            // Switch to Enemy tab
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector('.tool-btn[data-tool="enemy"]').classList.add('active');
+            showToolOptions("enemy");
+            updateEnemyCreatorPreview();
+            renderEnemyDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-enemy-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedEnemies.splice(idx, 1);
+            renderSavedNpcs();
+            renderNpcDownloadButtons();
+            renderSavedEnemies();
+            renderEnemyDownloadButtons();
+        };
+    });
+}
+
+function renderEnemyDownloadButtons() {
+    const btnDiv = document.getElementById('enemy-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `
+        <button id="download-enemy-defs" type="button">Download Enemy Definitions</button>
+    `;
+    document.getElementById('download-enemy-defs').onclick = () => {
+        const code = savedEnemies.map(enemy => getEnemyDefinitionCode(enemy)).join("\n\n");
+        downloadTextFile("enemy_definitions.js", code);
+    };
+}
+
+function getEnemyDefinitionCode(enemy) {
+    return `${enemy.id}: {
+    id: "${enemy.id}",
+    name: "${enemy.name}",
+    sprite: "assets/img/enemy/${enemy.spriteName}.png",
+    moveSpeed: ${enemy.moveSpeed},
+    distance: ${enemy.distance},
+    maxHealth: ${enemy.maxHealth},
+    attack: ${enemy.attack},
+    defense: ${enemy.defense},
+    speed: ${enemy.speed},
+    xpGain: ${enemy.xpGain},
+    loot: [
+${(enemy.loot || []).map(l => `        { item: "${l.item}", chance: ${l.chance}, amount: [${Array.isArray(l.amount) ? l.amount.join(', ') : l.amount}] }`).join(",\n")}
+    ],
+    spawns: [
+${(enemy.spawns || []).map(s => `        { map: ${typeof s.map === "string" ? `"${s.map}"` : s.map}, x: ${s.x}, y: ${s.y}, wanderArea: { x1: ${s.wanderArea.x1}, y1: ${s.wanderArea.y1}, x2: ${s.wanderArea.x2}, y2: ${s.wanderArea.y2} } }`).join(",\n")}
+    ]
+},`;
+}
+
+function clearEnemyInputs() {
+    enemyCreatorState.enemy = {
+        id: "",
+        name: "",
+        spriteName: "",
+        moveSpeed: 1.0,
+        distance: 3,
+        maxHealth: 20,
+        attack: 5,
+        defense: 2,
+        speed: 1,
+        xpGain: 10,
+        loot: [],
+        spawns: []
+    };
+    showToolOptions("enemy");
+}
+
+function updateEnemyCreatorPreview() {
+    document.getElementById('enemy-def-preview').textContent = getEnemyDefinitionCode(enemyCreatorState.enemy);
 }
