@@ -1,4 +1,4 @@
-// --- Creator Tab State ---
+// Creator Tab State
 const creatorState = {
     npc: {
         name: "",
@@ -46,7 +46,20 @@ const enemyCreatorState = {
 
 let savedEnemies = [];
 
-// --- Creator Tab Render ---
+let wanderSelectionStep = 0; 
+let wanderFirstCorner = null;
+let enemySpawnSelectionStep = 0; 
+let enemySpawnFirstCorner = null;
+let enemyCurrentWanderArea = null;
+
+let creatorMapZoom = 1;
+let creatorMapOffset = { x: 0, y: 0 };
+let creatorMapAssets = {};
+let creatorMapImages = {};
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+
+// Creator Tab Render
 function renderCreatorTab() {
     const tab = document.getElementById('creator-tab');
     tab.innerHTML = `
@@ -91,7 +104,7 @@ function renderCreatorTab() {
     };
 }
 
-// --- Asset Prompt ---
+// Asset Prompt
 function promptForAssets(mapData) {
     const controlsDiv = document.getElementById('creator-assets-controls');
     const assetNames = mapData.assets.map(a => a.file_name + ".png");
@@ -138,7 +151,7 @@ function promptForAssets(mapData) {
     };
 }
 
-// --- Tool Panel ---
+// Tool Panel 
 function showToolPanel() {
     const sidebar = document.getElementById('creator-tool-sidebar');
     sidebar.innerHTML = `
@@ -161,7 +174,7 @@ function showToolPanel() {
     });
 }
 
-// --- Tool Options (State Driven) ---
+// Tool Options
 function showToolOptions(tool) {
     const optionsDiv = document.getElementById('creator-tool-options');
     if (tool !== 'npc' && tool !== 'enemy') {
@@ -331,7 +344,7 @@ function showToolOptions(tool) {
     }
 }
 
-// --- Quest Type Options Renderer ---
+// Quest Type Options Renderer 
 function renderQuestTypeOptions(npc) {
     switch (npc.questType) {
         case "itemCollect":
@@ -359,14 +372,7 @@ function renderQuestTypeOptions(npc) {
     }
 }
 
-// Add these variables at the top of your file:
-let wanderSelectionStep = 0; // 0 = not selecting, 1 = first corner, 2 = second corner, 3 = spawn
-let wanderFirstCorner = null;
-let enemySpawnSelectionStep = 0; // 0 = not selecting, 1 = first corner, 2 = second corner, 3 = spawn
-let enemySpawnFirstCorner = null;
-let enemyCurrentWanderArea = null;
-
-// --- Attach Listeners ---
+// Attach Listeners
 function attachCreatorListeners() {
     const npc = creatorState.npc;
     // NPC fields
@@ -384,7 +390,7 @@ function attachCreatorListeners() {
         updateWanderPrompt();
     };
 
-    // Quest fields (if present)
+    // Quest fields 
     if (npc.hasQuest) {
         document.getElementById('quest-id').oninput = e => { npc.questId = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-name').oninput = e => { npc.questName = e.target.value; updateCreatorPreview(); };
@@ -423,7 +429,6 @@ function attachCreatorListeners() {
         }
     }
     document.getElementById('confirm-npc-btn').onclick = () => {
-        // Deep clone current NPC
         const npcCopy = JSON.parse(JSON.stringify(creatorState.npc));
         savedNpcs.push(npcCopy);
         renderSavedNpcs();
@@ -474,12 +479,10 @@ function renderSavedNpcs() {
             <button type="button" class="delete-npc-btn" data-idx="${idx}">Delete</button>
         </div>
     `).join("");
-    // Attach listeners
     listDiv.querySelectorAll('.edit-npc-btn').forEach(btn => {
         btn.onclick = () => {
             const idx = Number(btn.dataset.idx);
             creatorState.npc = JSON.parse(JSON.stringify(savedNpcs[idx]));
-            // Switch to NPC tab
             document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
             document.querySelector('.tool-btn[data-tool="npc"]').classList.add('active');
             showToolOptions("npc");
@@ -496,6 +499,7 @@ function renderSavedNpcs() {
             renderNpcDownloadButtons();
             renderSavedEnemies();
             renderEnemyDownloadButtons();
+            drawMap();
         };
     });
 }
@@ -529,7 +533,6 @@ function attachRewardListeners() {
                 const name = row.querySelector('.reward-name').value.trim();
                 const amount = Number(row.querySelector('.reward-amount').value) || 1;
                 if (name) {
-                    // If stat reward (xp, attack, etc), format as { xp: 50 }
                     if (["xp", "attack", "defence", "maxHealth", "attackSpeed"].includes(name)) {
                         rewards.push({ [name]: amount });
                     } else {
@@ -565,11 +568,11 @@ function attachRewardListeners() {
     }
 }
 
-// --- Preview Renderer ---
+// Preview Renderer 
 function updateCreatorPreview() {
     const npc = creatorState.npc;
 
-    // Format wanderArea for preview (only corners, not tiles)
+    // Format wanderArea for preview 
     let wanderAreaPreview = undefined;
     if (npc.wanderArea && typeof npc.wanderArea.x1 === "number") {
         wanderAreaPreview = {
@@ -580,7 +583,7 @@ function updateCreatorPreview() {
         };
     }
 
-    // Format spawns array for preview (manual formatting, one line, no quotes on keys)
+    // Format spawns array for preview 
     let spawnsPreview = "";
     if (npc.spawn && wanderAreaPreview) {
         const mapVal = isNaN(npc.mapNumber) ? `"${npc.mapNumber}"` : npc.mapNumber;
@@ -621,7 +624,7 @@ ${triggers}
   },`;
     }
 
-    // NPC definition preview (manual formatting for spawns and keys)
+    // NPC definition preview 
     let preview =
 `{
   id: "${npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
@@ -639,7 +642,7 @@ ${forcedEncounterPreview ? forcedEncounterPreview : ""}
 
     document.getElementById('npc-def-preview').textContent = preview;
 
-    // --- Quest Definition Preview ---
+    // Quest Definition Preview
     if (npc.hasQuest) {
         let questTypeObj = {};
         switch (npc.questType) {
@@ -723,13 +726,6 @@ function updateWanderPrompt() {
 }
 
 // Map Engine for Preview Map 
-let creatorMapZoom = 1;
-let creatorMapOffset = { x: 0, y: 0 };
-let creatorMapAssets = {};
-let creatorMapImages = {};
-let isDragging = false;
-let dragStart = { x: 0, y: 0 };
-
 function showCreatorMap(mapData, loadedAssets = {}) {
     creatorMapAssets = loadedAssets;
     creatorMapImages = {};
@@ -859,7 +855,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.restore();
         }
 
-        // --- Wander Area Highlight ---
+        // Wander Area Highlight
         const npc = creatorState.npc;
         if (npc.wanderArea && npc.wanderArea.tiles && Array.isArray(npc.wanderArea.tiles)) {
             ctx.save();
@@ -871,7 +867,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.restore();
         }
 
-        // --- Spawn Location Marker ---
+        // Spawn Location Marker
         if (npc.spawn && typeof npc.spawn.x === "number" && typeof npc.spawn.y === "number") {
             ctx.save();
             ctx.globalAlpha = 0.85;
@@ -975,6 +971,62 @@ function showCreatorMap(mapData, loadedAssets = {}) {
         ctx.restore();
     }
 
+    // Touch drag support
+    let lastTouch = null;
+    let lastTouchDist = null;
+
+    canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            isDragging = true;
+            const touch = e.touches[0];
+            lastTouch = { x: touch.clientX, y: touch.clientY };
+            dragStart.x = touch.clientX - creatorMapOffset.x;
+            dragStart.y = touch.clientY - creatorMapOffset.y;
+            canvas.style.cursor = "grabbing";
+        } else if (e.touches.length === 2) {
+            // Pinch zoom start
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+            const touch = e.touches[0];
+            creatorMapOffset.x = touch.clientX - dragStart.x;
+            creatorMapOffset.y = touch.clientY - dragStart.y;
+            drawMap();
+        } else if (e.touches.length === 2) {
+            // Pinch zoom
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (lastTouchDist) {
+                let zoomChange = (dist - lastTouchDist) * 0.005;
+                let oldZoom = creatorMapZoom;
+                creatorMapZoom = Math.max(0.1, Math.min(3, creatorMapZoom + zoomChange));
+                // Center zoom on midpoint between touches
+                const rect = canvas.getBoundingClientRect();
+                const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+                const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+                creatorMapOffset.x = midX - ((midX - creatorMapOffset.x) * (creatorMapZoom / oldZoom));
+                creatorMapOffset.y = midY - ((midY - creatorMapOffset.y) * (creatorMapZoom / oldZoom));
+                drawMap();
+            }
+            lastTouchDist = dist;
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function(e) {
+        isDragging = false;
+        lastTouch = null;
+        lastTouchDist = null;
+        canvas.style.cursor = "grab";
+    }, { passive: false });
+
     // Dragging logic
     canvas.onmousedown = function(e) {
         isDragging = true;
@@ -1021,7 +1073,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
         const x = Math.floor(mouseX / tileSize);
         const y = Math.floor(mouseY / tileSize);
     
-        // --- NPC Wander/Spawn Selection ---
+        // NPC Wander/Spawn Selection
         if (wanderSelectionStep !== 0) {
             if (wanderSelectionStep === 1) {
                 wanderFirstCorner = { x, y };
@@ -1061,10 +1113,9 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                     if (previewDiv) previewDiv.textContent = "Spawn must be inside the wander area. Try again.";
                 }
             }
-            // Do NOT return here, allow enemy selection to work if NPC selection is not active
         }
     
-        // --- Enemy Spawn Selection ---
+        // Enemy Spawn Selection
         if (enemySpawnSelectionStep !== 0) {
             if (enemySpawnSelectionStep === 1) {
                 enemySpawnFirstCorner = { x, y };
@@ -1101,7 +1152,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                             y1: area.y1,
                             x2: area.x2,
                             y2: area.y2,
-                            tiles: area.tiles // <-- Add this line!
+                            tiles: area.tiles 
                         }
                     });
                     enemySpawnSelectionStep = 0;
@@ -1117,10 +1168,7 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             }
         }
     };
-
     resizeCanvas();
-
-    // Render sidebar and tool options using your global functions
     showToolPanel();
 }
 
@@ -1150,7 +1198,7 @@ function downloadTextFile(filename, text) {
 }
 
 function getNpcDefinitionCode(npc) {
-    // Format wanderArea for preview (only corners, not tiles)
+    // Format wanderArea 
     let wanderAreaPreview = undefined;
     if (npc.wanderArea && typeof npc.wanderArea.x1 === "number") {
         wanderAreaPreview = {
@@ -1285,7 +1333,6 @@ function renderTileMakerTab() {
             </div>
         </div>
     `;
-    // Now call a function to initialize the generator controls and logic
     setupTileMaker();
 }
 
@@ -1421,7 +1468,6 @@ function renderSavedEnemies() {
         btn.onclick = () => {
             const idx = Number(btn.dataset.idx);
             enemyCreatorState.enemy = JSON.parse(JSON.stringify(savedEnemies[idx]));
-            // Switch to Enemy tab
             document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
             document.querySelector('.tool-btn[data-tool="enemy"]').classList.add('active');
             showToolOptions("enemy");
@@ -1437,6 +1483,7 @@ function renderSavedEnemies() {
             renderNpcDownloadButtons();
             renderSavedEnemies();
             renderEnemyDownloadButtons();
+            drawMap();
         };
     });
 }
