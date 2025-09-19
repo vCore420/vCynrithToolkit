@@ -1,74 +1,57 @@
-# vTileGen - Pixel Art Tile Generator
+# vCynrithToolkit
 
-**vTileGen** is a web-based pixel art tile generator that lets you create, customize, and download pixel tiles with a variety of controls for palette, symmetry, patterns, and more.
+**vCynrithToolkit** is an all-in-one editor and toolkit for creating, managing, and visualizing game content for Cynrith.  
+It provides a modern interface for building NPCs, quests, items, skills, tiles, and more, streamlining the development and customization process for your game.
 
 ---
 
 ## Features
 
-- **Palette Management**
-  - Choose from preset palettes (Pastel, Neon, Retro, Ocean, Fire) or create your own custom palette.
-  - Add/remove colors interactively.
-
-- **Tile Controls**
-  - Size options: 8x8, 16x16, 24x24, 32x32, 48x48, 64x64.
-  - Symmetry: None, Vertical, Horizontal, Radial.
-  - Pattern presets: Random, Checkerboard, Vertical Stripes, Horizontal Stripes, Gradient, Border Only, Circle, Diagonal Stripes, Cross, Diamond, Spiral, Dots.
-  - Density, definition (block size), clarity (blur), transparency, border toggle.
-  - Seed input for reproducible randomness.
-
-- **Canvas & Output**
-  - Real-time preview on a canvas, with zoom controls.
-  - Download tile as PNG.
-
-- **UI**
-  - Dark theme, responsive layout, modern controls.
-
-- **Persistent Settings**
-  - All settings are automatically saved and restored after page refresh.
+- **Floor Visualizer:** View and explore game floors and layouts.
+- **NPC Creator:** Build and preview NPC definitions, dialogue, spawn areas, and forced encounters.
+- **Quest Editor:** Create and format quests, including requirements and rewards.
+- **Item & Skill Editors:** Manage game items and skills with live previews.
+- **Tile Maker:** Generate pixel art tiles with custom palettes, patterns, and export options.
+- **Live Preview:** Instantly see formatted output matching Cynrith’s game definitions.
 
 ---
 
 ## Getting Started
 
-1. **Clone or Download**
-   - Download the repository or clone it:
-     ```
-     git clone https://github.com/yourusername/vTileGen.git
-     ```
-
-2. **Open in Browser**
-   - Open `index.html` in your browser.
-
-3. **Usage**
-   - Select your palette, size, symmetry, pattern, and other options.
-   - Click **Generate Tile** to preview.
-   - Adjust zoom as needed.
-   - Click **Download PNG** to save your tile.
+1. **Clone or Download** this repository.
+2. Open the project folder in [Visual Studio Code](https://code.visualstudio.com/) or your preferred editor.
+3. Open `index.html` in your browser to launch the toolkit.
 
 ---
 
-## File Structure
+## Usage
 
-- `index.html` — Main UI structure.
-- `styles.css` — Dark-themed, responsive styling.
-- `main.js` — Palette logic, tile generation, UI event listeners, canvas rendering.
+- Use the sidebar tabs to switch between editors (Floor Visualizer, NPC Creator, Items, Skills, Tile Maker).
+- Fill out forms and use controls to create or edit game content.
+- Preview output in the right panel; copy and paste definitions directly into your game’s data files.
 
 ---
 
-## Customization
+## Requirements
 
-- Add new palettes or patterns by editing `main.js` and `index.html`.
-- Modify styles in `styles.css` for a different look.
+- Modern web browser (Chrome, Firefox, Edge, etc.)
+- No installation required; runs locally as a static web app.
+
+---
+
+## Contributing
+
+Pull requests and suggestions are welcome!  
+If you find a bug or want to request a feature, please open an issue.
 
 ---
 
 ## License
 
-MIT License
+This toolkit is provided under the MIT License.
 
 ---
 
 ## Credits
 
-Created by vCore.
+Created by **vCore** for the Cynrith game project.

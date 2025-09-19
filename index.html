@@ -2,102 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>vTile Generator</title>
+  <title>Cynrith Editor</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h2>Pixel Art Tile Generator by vCore</h2>
-  <div id="main-layout">
-    <div id="left-panel">
-      <div id="controls">
-        <label>
-          Palette Preset:
-          <select id="palette"></select>
-        </label>
-        <label>
-          Add to Palette:
-          <input type="color" id="addColor" value="#FF5555">
-          <button id="addColorBtn" type="button">Add</button>
-        </label>
-        <div id="paletteSwatches"></div>
-        <label>
-          Size:
-          <select id="size">
-            <option value="8">8x8</option>
-            <option value="16">16x16</option>
-            <option value="24">24x24</option>
-            <option value="32" selected>32x32</option>
-            <option value="48">48x48</option>
-            <option value="64">64x64</option>
-          </select>
-        </label>
-        <label>
-          Symmetry:
-          <select id="symmetry">
-            <option value="none">None</option>
-            <option value="vertical" selected>Vertical</option>
-            <option value="horizontal">Horizontal</option>
-            <option value="radial">Radial</option>
-          </select>
-        </label>
-        <label>
-          Pattern:
-          <select id="pattern">
-            <option value="random" selected>Random</option>
-            <option value="checker">Checkerboard</option>
-            <option value="stripes">Vertical Stripes</option>
-            <option value="hstripes">Horizontal Stripes</option>
-            <option value="gradient">Gradient</option>
-            <option value="border">Border Only</option>
-            <option value="circle">Circle</option>
-            <option value="diagonal">Diagonal Stripes</option>
-            <option value="cross">Cross</option>
-            <option value="diamond">Diamond</option>
-            <option value="spiral">Spiral</option>
-            <option value="dots">Dots</option>
-          </select>
-        </label>
-        <label>
-          Density:
-          <input type="range" id="density" min="0.1" max="1.0" step="0.01" value="0.7">
-          <span id="densityValue">0.7</span>
-        </label>
-        <label>
-          Definition:
-          <input type="range" id="definition" min="1" max="8" step="1" value="1">
-          <span id="definitionValue">1</span>
-        </label>
-        <label>
-          Clarity:
-          <input type="range" id="clarity" min="0" max="8" step="1" value="0">
-          <span id="clarityValue">0</span>
-        </label>
-        <label>
-          Transparency:
-          <input type="checkbox" id="transparency">
-        </label>
-        <label>
-          Border:
-          <input type="checkbox" id="border">
-        </label>
-        <label>
-          Seed:
-          <input type="text" id="seed" placeholder="Type to reproduce">
-          <button id="randomSeed">🎲</button>
-        </label>
-      </div>
-      <button id="generate">Generate Tile</button>
-      <button id="download">Download PNG</button>
-    </div>
-    <div id="right-panel">
-      <div id="zoom-controls">
-        <label>Zoom: <span id="zoomValue">8x</span>
-          <input type="range" id="zoom" min="1" max="24" step="1" value="8">
-        </label>
-      </div>
-      <canvas id="tileCanvas" width="32" height="32"></canvas>
-    </div>
+  <div id="editor-layout">
+    <aside id="sidebar">
+        <button class="tab-btn" data-tab="floor-visualizer">Floor Visualizer</button>
+        <button class="tab-btn" data-tab="items">Items</button>
+        <button class="tab-btn" data-tab="skills">Skills</button>
+        <button class="tab-btn" data-tab="creator">Creator</button>
+        <button class="tab-btn" data-tab="tile-maker">Tile Maker</button>
+      </aside>
+      <main id="main-panel">
+        <div id="floor-visualizer-tab" class="editor-tab active"></div>
+        <div id="items-tab" class="editor-tab"></div>
+        <div id="skills-tab" class="editor-tab"></div>
+        <div id="creator-tab" class="editor-tab">
+            <h2>Floor Creator</h2>
+            <input type="file" id="map-json-upload" accept=".json" />
+            <div id="creator-map-preview" style="margin-top:16px;">
+                <!-- Map canvas will be injected here -->
+            </div>
+            <div id="creator-map-controls" style="margin-top:16px;">
+                <!-- Controls for selecting tiles, placing NPCs, etc. -->
+            </div>
+        </div>
+        <div id="tile-maker-tab" class="editor-tab"></div>
+      </main>
   </div>
   <script src="main.js"></script>
+  <script src="creator.js"></script>
+  <script src="tileGen.js"></script>
+  <script src="floorVisual.js"></script>
 </body>
 </html>
