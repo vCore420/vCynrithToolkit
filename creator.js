@@ -25,6 +25,8 @@ const creatorState = {
     }
 };
 
+let savedNpcs = [];
+
 // --- Creator Tab Render ---
 function renderCreatorTab() {
     const tab = document.getElementById('creator-tab');
@@ -43,6 +45,8 @@ function renderCreatorTab() {
             </div>
             <div id="creator-map-preview" style="flex:1; position:relative; height:100%;"></div>
         </div>
+        <div id="saved-npcs-list" style="margin-top:24px;"></div>
+        <div id="npc-download-buttons" style="margin-top:16px;"></div>
     `;
 
     document.getElementById('map-json-upload').onchange = function(e) {
@@ -234,6 +238,7 @@ function showToolOptions(tool) {
                 </label>
             </div>
             ` : ""}
+            <button id="confirm-npc-btn" style="margin-top:16px;">Confirm NPC</button>
             <h4>NPC Definition Preview</h4>
             <pre id="npc-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             <div id="quest-def-preview-container" style="margin-top:12px;">
@@ -336,6 +341,77 @@ function attachCreatorListeners() {
                 break;
         }
     }
+    document.getElementById('confirm-npc-btn').onclick = () => {
+        // Deep clone current NPC
+        const npcCopy = JSON.parse(JSON.stringify(creatorState.npc));
+        savedNpcs.push(npcCopy);
+        renderSavedNpcs();
+        renderNpcDownloadButtons();
+        clearNpcInputs();
+        updateCreatorPreview();
+        updateWanderPrompt();
+    };
+}
+
+function clearNpcInputs() {
+    creatorState.npc = {
+        name: "",
+        spriteGender: "m",
+        spriteNumber: "1",
+        mapNumber: 0,
+        dialogueDefault: "",
+        hasQuest: false,
+        wanderArea: null,
+        spawn: null,
+        questId: "",
+        questName: "",
+        questDescription: "",
+        questRedoable: false,
+        npcForced: false,
+        triggerTiles: "",
+        questGiven: "",
+        questIncomplete: "",
+        questComplete: "",
+        questType: "gift",
+        questTypeOptions: {},
+        questRewards: ""
+    };
+    showToolOptions("npc");
+}
+
+function renderSavedNpcs() {
+    const listDiv = document.getElementById('saved-npcs-list');
+    if (!listDiv) return;
+    if (savedNpcs.length === 0) {
+        listDiv.innerHTML = "<b>No NPCs saved yet.</b>";
+        return;
+    }
+    listDiv.innerHTML = savedNpcs.map((npc, idx) => `
+        <div class="saved-npc-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${npc.name || "(Unnamed NPC)"}</span>
+            <button type="button" class="edit-npc-btn" data-idx="${idx}">Edit</button>
+            <button type="button" class="delete-npc-btn" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+    // Attach listeners
+    listDiv.querySelectorAll('.edit-npc-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            creatorState.npc = JSON.parse(JSON.stringify(savedNpcs[idx]));
+            showToolOptions("npc");
+            updateCreatorPreview();
+            updateWanderPrompt();
+            renderNpcDownloadButtons();
+        };
+    });
+    listDiv.querySelectorAll('.delete-npc-btn').forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            savedNpcs.splice(idx, 1);
+            renderSavedNpcs();
+            renderNpcDownloadButtons();
+        };
+    });
 }
 
 function renderRewardsList() {
@@ -723,6 +799,31 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.restore();
         }
         ctx.restore();
+        savedNpcs.forEach(npc => {
+            // Highlight wander area
+            if (npc.wanderArea && npc.wanderArea.tiles) {
+                ctx.save();
+                ctx.globalAlpha = 0.25;
+                ctx.fillStyle = "#ffd700";
+                npc.wanderArea.tiles.forEach(({x, y}) => {
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                });
+                ctx.restore();
+            }
+            // Spawn marker
+            if (npc.spawn && typeof npc.spawn.x === "number" && typeof npc.spawn.y === "number") {
+                ctx.save();
+                ctx.globalAlpha = 0.85;
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 3;
+                const centerX = npc.spawn.x * tileSize + tileSize / 2;
+                const centerY = npc.spawn.y * tileSize + tileSize / 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+                ctx.stroke();
+                ctx.restore();
+            }
+        });
     }
 
     // Dragging logic
@@ -819,6 +920,146 @@ function showCreatorMap(mapData, loadedAssets = {}) {
 
     // Render sidebar and tool options using your global functions
     showToolPanel();
+}
+
+function renderNpcDownloadButtons() {
+    const btnDiv = document.getElementById('npc-download-buttons');
+    if (!btnDiv) return;
+    btnDiv.innerHTML = `
+        <button id="download-npc-defs" type="button">Download NPC Definitions</button>
+        <button id="download-quest-defs" type="button">Download Quest Definitions</button>
+    `;
+    document.getElementById('download-npc-defs').onclick = () => {
+        const code = savedNpcs.map(npc => getNpcDefinitionCode(npc)).join("\n\n");
+        downloadTextFile("npc_definitions.js", code);
+    };
+    document.getElementById('download-quest-defs').onclick = () => {
+        const code = savedNpcs.filter(npc => npc.hasQuest).map(npc => getQuestDefinitionCode(npc)).join("\n\n");
+        downloadTextFile("quest_definitions.js", code);
+    };
+}
+
+function downloadTextFile(filename, text) {
+    const blob = new Blob([text], {type: "text/plain"});
+    const link = document.createElement("a");
+    link.download = filename;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+}
+
+function getNpcDefinitionCode(npc) {
+    // Format wanderArea for preview (only corners, not tiles)
+    let wanderAreaPreview = undefined;
+    if (npc.wanderArea && typeof npc.wanderArea.x1 === "number") {
+        wanderAreaPreview = {
+            x1: npc.wanderArea.x1,
+            y1: npc.wanderArea.y1,
+            x2: npc.wanderArea.x2,
+            y2: npc.wanderArea.y2
+        };
+    }
+    let spawnsPreview = "";
+    if (npc.spawn && wanderAreaPreview) {
+        const mapVal = isNaN(npc.mapNumber) ? `"${npc.mapNumber}"` : npc.mapNumber;
+        spawnsPreview = `[ { map: ${mapVal}, x: ${npc.spawn.x}, y: ${npc.spawn.y}, wanderArea: { x1: ${wanderAreaPreview.x1}, y1: ${wanderAreaPreview.y1}, x2: ${wanderAreaPreview.x2}, y2: ${wanderAreaPreview.y2} } } ]`;
+    } else {
+        spawnsPreview = "[]";
+    }
+    function formatDialogueSection(key, arr) {
+        if (!arr || !arr.length) return "";
+        return `\n    ${key}: [\n${arr.map(line => `      "${line}"`).join(",\n")}\n    ]`;
+    }
+    const dialogueDefault = npc.dialogueDefault.split('\n').filter(l => l.trim());
+    const dialogueQuestGiven = npc.questGiven.split('\n').filter(l => l.trim());
+    const dialogueQuestIncomplete = npc.questIncomplete.split('\n').filter(l => l.trim());
+    const dialogueQuestComplete = npc.questComplete.split('\n').filter(l => l.trim());
+    let dialoguePreview = `default: [\n${dialogueDefault.map(line => `      "${line}"`).join(",\n")}\n    ]`;
+    if (dialogueQuestGiven.length) dialoguePreview += formatDialogueSection("questGiven", dialogueQuestGiven);
+    if (dialogueQuestIncomplete.length) dialoguePreview += formatDialogueSection("questIncomplete", dialogueQuestIncomplete);
+    if (dialogueQuestComplete.length) dialoguePreview += formatDialogueSection("questComplete", dialogueQuestComplete);
+
+    let forcedEncounterPreview = "";
+    if (npc.npcForced && npc.triggerTiles) {
+        const triggers = npc.triggerTiles.split(' ').map(pair => {
+            const [x, y] = pair.split(',').map(Number);
+            return (!isNaN(x) && !isNaN(y)) ? `      { x: ${x}, y: ${y} }` : null;
+        }).filter(Boolean).join(",\n");
+        forcedEncounterPreview = `
+  forcedEncounter: {
+    enabled: true,
+    triggerTiles: [
+${triggers}
+    ],
+    triggered: false
+  },`;
+    }
+
+    return `{
+  id: "${npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
+  name: "${npc.name}",
+  sprite: "assets/img/npc/npc_${npc.spriteGender}_${npc.spriteNumber}.png",
+  interactive: true,
+  spawns: ${spawnsPreview},
+  dialogue: {
+    ${dialoguePreview}
+  }${npc.hasQuest ? `,
+  questId: "${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
+  questRedo: ${!!npc.questRedoable}` : ""}
+${forcedEncounterPreview ? forcedEncounterPreview : ""}
+}`;
+}
+
+function getQuestDefinitionCode(npc) {
+    let questTypeObj = {};
+    switch (npc.questType) {
+        case "itemCollect":
+        case "gift":
+            questTypeObj.requiredItems = (npc.questTypeOptions.requiredItems || "").split('\n').map(line => {
+                const [id, amount] = line.split(',').map(s => s.trim());
+                return id ? { id, amount: Number(amount) || 1 } : null;
+            }).filter(Boolean);
+            break;
+        case "enemyDefeat":
+            questTypeObj.enemyId = npc.questTypeOptions.enemyId || "";
+            questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
+            break;
+        case "statBuild":
+            questTypeObj.stat = npc.questTypeOptions.stat || "";
+            questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
+            break;
+        case "interactTiles":
+            questTypeObj.interactTileIds = (npc.questTypeOptions.interactTileIds || "").split(',').map(s => s.trim()).filter(Boolean);
+            questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
+            break;
+    }
+    let rewards = [];
+    try {
+        rewards = JSON.parse(npc.questRewards || "[]");
+    } catch (e) {
+        rewards = [];
+    }
+    return `{
+  id: "${npc.questId || npc.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}",
+  name: "${npc.questName || npc.name}",
+  description: "${npc.questDescription || ""}",
+  type: "${npc.questType}",${
+    questTypeObj.requiredItems ? `\n  requiredItems: [${questTypeObj.requiredItems.map(i => ` { id: "${i.id}", amount: ${i.amount} }`).join(",")} ],` : ""
+  }${
+    questTypeObj.enemyId ? `\n  enemyId: "${questTypeObj.enemyId}",` : ""
+  }${
+    questTypeObj.requiredAmount ? `\n  requiredAmount: ${questTypeObj.requiredAmount},` : ""
+  }${
+    questTypeObj.stat ? `\n  stat: "${questTypeObj.stat}",` : ""
+  }${
+    questTypeObj.interactTileIds ? `\n  interactTileIds: [${questTypeObj.interactTileIds.map(id => `"${id}"`).join(", ")}],` : ""
+  }
+  rewards: [${rewards.map(r => {
+    if (r.id) return `{ id: "${r.id}", amount: ${r.amount || 1} }`;
+    let keys = Object.keys(r).filter(k => k !== "id" && k !== "amount");
+    return keys.map(k => `{ ${k}: ${r[k]} }`).join(", ");
+  }).join(", ")}],
+  redoable: ${!!npc.questRedoable}
+}`;
 }
 
 function renderTileMakerTab() {
