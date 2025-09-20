@@ -1,3 +1,6 @@
+// This is a mess and i apologize to the reader but it does do the job for now until i get around to refactoring it
+
+
 // Creator Tab State
 const creatorState = {
     npc: {
@@ -21,7 +24,8 @@ const creatorState = {
         questComplete: "",
         questType: "gift",
         questTypeOptions: {},
-        questRewards: ""
+        questRewards: "",
+        questIdManual: false 
     }
 };
 
@@ -780,10 +784,12 @@ function showToolOptions(tool) {
 function renderQuestTypeOptions(npc) {
     switch (npc.questType) {
         case "itemCollect":
+            return `<label>Item ID:<br>
+                <input type="text" id="quest-item-id" value="${npc.questTypeOptions.itemId || ""}" style="width:100%;" placeholder="e.g. dewleaf" /></label>
+                <label>Required Amount:<br>
+                <input type="number" id="quest-item-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
         case "gift":
-            return `<label>Required Items (one per line, format: id,amount):<br>
-                <textarea id="quest-required-items" rows="2" style="width:100%;" placeholder="e.g. dewleaf,3">${npc.questTypeOptions.requiredItems || ""}</textarea>
-            </label>`;
+            return "";
         case "enemyDefeat":
             return `<label>Enemy ID:<br>
                 <input type="text" id="quest-enemy-id" value="${npc.questTypeOptions.enemyId || ""}" style="width:100%;" placeholder="e.g. slime_01" /></label>
@@ -803,6 +809,7 @@ function renderQuestTypeOptions(npc) {
             return "";
     }
 }
+
 
 // Attach Listeners
 function attachCreatorListeners() {
@@ -825,7 +832,13 @@ function attachCreatorListeners() {
     // Quest fields 
     if (npc.hasQuest) {
         document.getElementById('quest-id').oninput = e => { npc.questId = e.target.value; updateCreatorPreview(); };
-        document.getElementById('quest-name').oninput = e => { npc.questName = e.target.value; updateCreatorPreview(); };
+        document.getElementById('quest-name').oninput = e => {
+            npc.questName = e.target.value;
+            npc.questId = normalizeIdFromName(npc.questName);           // auto from name
+            const qidEl = document.getElementById('quest-id');          // reflect in the box
+            if (qidEl) qidEl.value = npc.questId;
+            updateCreatorPreview();
+        };
         document.getElementById('quest-description').oninput = e => { npc.questDescription = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-redoable').onchange = e => { npc.questRedoable = e.target.checked; updateCreatorPreview(); };
         document.getElementById('npc-forced').onchange = e => { npc.npcForced = e.target.checked; showToolOptions("npc"); };
@@ -843,8 +856,10 @@ function attachCreatorListeners() {
         // Quest type options
         switch (npc.questType) {
             case "itemCollect":
+                document.getElementById('quest-item-id').oninput = e => { npc.questTypeOptions.itemId = e.target.value; updateCreatorPreview(); };
+                document.getElementById('quest-item-amount').oninput = e => { npc.questTypeOptions.requiredAmount = e.target.value; updateCreatorPreview(); };
+                break;
             case "gift":
-                document.getElementById('quest-required-items').oninput = e => { npc.questTypeOptions.requiredItems = e.target.value; updateCreatorPreview(); };
                 break;
             case "enemyDefeat":
                 document.getElementById('quest-enemy-id').oninput = e => { npc.questTypeOptions.enemyId = e.target.value; updateCreatorPreview(); };
@@ -1078,13 +1093,15 @@ ${forcedEncounterPreview ? forcedEncounterPreview : ""}
     if (npc.hasQuest) {
         let questTypeObj = {};
         switch (npc.questType) {
-            case "itemCollect":
-            case "gift":
-                questTypeObj.requiredItems = (npc.questTypeOptions.requiredItems || "").split('\n').map(line => {
-                    const [id, amount] = line.split(',').map(s => s.trim());
-                    return id ? { id, amount: Number(amount) || 1 } : null;
-                }).filter(Boolean);
+            case "itemCollect": {
+                const id = (npc.questTypeOptions.itemId || "").trim();
+                const amt = Number(npc.questTypeOptions.requiredAmount) || 1;
+                questTypeObj.requiredItems = id ? [{ id, amount: amt }] : [];
                 break;
+            }
+            case "gift": {
+                break;
+            }
             case "enemyDefeat":
                 questTypeObj.enemyId = npc.questTypeOptions.enemyId || "";
                 questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
@@ -1977,13 +1994,15 @@ ${forcedEncounterPreview}
 function getQuestDefinitionCode(npc) {
     let questTypeObj = {};
     switch (npc.questType) {
-        case "itemCollect":
-        case "gift":
-            questTypeObj.requiredItems = (npc.questTypeOptions.requiredItems || "").split('\n').map(line => {
-                const [id, amount] = line.split(',').map(s => s.trim());
-                return id ? { id, amount: Number(amount) || 1 } : null;
-            }).filter(Boolean);
+        case "itemCollect": {
+            const id = (npc.questTypeOptions.itemId || "").trim();
+            const amt = Number(npc.questTypeOptions.requiredAmount) || 1;
+            questTypeObj.requiredItems = id ? [{ id, amount: amt }] : [];
             break;
+        }
+        case "gift": {
+            break;
+        }
         case "enemyDefeat":
             questTypeObj.enemyId = npc.questTypeOptions.enemyId || "";
             questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
