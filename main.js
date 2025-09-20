@@ -163,6 +163,8 @@ async function loadAllDefinitions() {
         }
     }
     renderFloorVisualizer();
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.style.display = 'none';
 }
   
 loadAllDefinitions();
@@ -176,6 +178,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const tabId = btn.dataset.tab + '-tab';
         document.getElementById(tabId).classList.add('active');
 
+        const mainPanel = document.getElementById('main-panel');
+        if (mainPanel) mainPanel.scrollTop = 0;
+
+        
         if (tabId === 'floor-visualizer-tab') renderFloorVisualizer();
         if (tabId === 'items-tab') renderItemsTab();
         if (tabId === 'skills-tab') renderSkillsTab();

@@ -174,6 +174,19 @@ function renderCreatorTab() {
     const tab = document.getElementById('creator-tab');
     tab.innerHTML = `
         <h2>Floor Creator</h2>
+        <div id="creator-map-load-controls" style="margin-bottom:16px;">
+            <label>
+                <b>Load Existing Map:</b>
+                <select id="creator-map-select">
+                    <option value="">-- New Map --</option>
+                    <option value="0">Floor 1: Verdant Rise</option>
+                    <option value="1">Floor 2: Stonewake Expanse</option>
+                    <option value="2">Floor 3: Gloomroot Thicket</option>
+                    <option value="3">Floor 4: The Shattered Spires</option>
+                    <option value="4">Floor 5: Umbracourt</option>
+                </select>
+            </label>
+        </div>
         <div id="map-json-controls" style="margin-bottom:16px;">
             <h3>Step 1: Upload your map JSON file</h3>
             <p>Select your exported map JSON file to begin.</p>
@@ -203,6 +216,35 @@ function renderCreatorTab() {
         <div id="skill-download-buttons" style="margin-top:16px;"></div>
     `;
 
+    document.getElementById('creator-map-select').onchange = function(e) {
+        const idx = e.target.value;
+        if (idx !== "") {
+            // Prompt for map JSON upload
+            const statusDiv = document.getElementById('map-json-status');
+            statusDiv.innerHTML = `<span style="color: #2196f3;"><b>Please upload the JSON file for this map.</b></span>`;
+            // Listen for file upload
+            document.getElementById('map-json-upload').onchange = function(ev) {
+                const file = ev.target.files[0];
+                if (!file) {
+                    statusDiv.innerHTML = `<span style="color: #ff9800;"><b>No file selected.</b></span>`;
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function(ev2) {
+                    try {
+                        const mapData = JSON.parse(ev2.target.result);
+                        statusDiv.innerHTML = `<span style="color: #4caf50;"><b>Map loaded successfully!</b></span>`;
+                        // Prompt for assets upload as usual
+                        promptForAssets(mapData);
+                    } catch (err) {
+                        statusDiv.innerHTML = `<span style="color: #ff9800;"><b>Error: Invalid map JSON file.</b></span>`;
+                    }
+                };
+                reader.readAsText(file);
+            };
+        }
+    };
+
     document.getElementById('map-json-upload').onchange = function(e) {
         const file = e.target.files[0];
         const statusDiv = document.getElementById('map-json-status');
@@ -224,6 +266,60 @@ function renderCreatorTab() {
     };
 }
 
+function loadExistingMapAndDefinitions(floorIdx, mapData, loadedAssets) {
+    // Load all definitions for this map
+    savedNpcs = Object.values(definitions.npcs || {}).filter(npc =>
+        Array.isArray(npc.spawns) &&
+        npc.spawns.some(spawn => Number(spawn.map) === floorIdx)
+    );
+    savedEnemies = Object.values(definitions.enemies || {}).filter(enemy =>
+        Array.isArray(enemy.spawns) &&
+        enemy.spawns.some(spawn => Number(spawn.map) === floorIdx)
+    );
+    savedTriggers = (definitions.triggerTiles || []).filter(trig =>
+        Number(trig.map) === floorIdx
+    );
+    savedInteractTiles = (definitions.interactTiles || []).filter(tile =>
+        Number(tile.map) === floorIdx
+    );
+    savedWorldSprites = Object.values(definitions.worldSprites || {}).filter(ws =>
+        (ws.positions || []).some(p => Number(p.map) === floorIdx)
+    );
+
+    // Reset selection steps, offsets, etc
+    wanderSelectionStep = 0;
+    enemySpawnSelectionStep = 0;
+    triggerSelectionStep = 0;
+    interactSelectionStep = 0;
+    spriteSelectionStep = 0;
+    creatorMapOffset = { x: 0, y: 0 };
+    creatorMapZoom = 1;
+
+    // Render map and markers
+    showCreatorMap(mapData, loadedAssets);
+    renderSavedNpcs();
+    renderSavedEnemies();
+    renderSavedTriggers();
+    renderSavedInteractTiles();
+    renderSavedWorldSprites();
+}
+
+function getWanderTiles(area) {
+    if (!area) return [];
+    if (Array.isArray(area.tiles)) return area.tiles;
+    if (typeof area.x1 === "number" && typeof area.y1 === "number" &&
+        typeof area.x2 === "number" && typeof area.y2 === "number") {
+        const tiles = [];
+        for (let x = area.x1; x <= area.x2; x++) {
+            for (let y = area.y1; y <= area.y2; y++) {
+                tiles.push({ x, y });
+            }
+        }
+        return tiles;
+    }
+    return [];
+}
+
 // Asset Prompt
 function promptForAssets(mapData) {
     const controlsDiv = document.getElementById('creator-assets-controls');
@@ -241,7 +337,6 @@ function promptForAssets(mapData) {
         const statusDiv = document.getElementById('asset-upload-status');
         let loadedAssets = {};
         let missingAssets = assetNames.slice();
-
         let loadedCount = 0;
         files.forEach(file => {
             const fileName = file.name.split('/').pop();
@@ -256,16 +351,38 @@ function promptForAssets(mapData) {
                     } else if (missingAssets.length > 0) {
                         statusDiv.innerHTML = `<span style="color: #ff9800;"><b>Missing assets:</b> ${missingAssets.join(", ")}</span>`;
                     }
-                    showCreatorMap(mapData, loadedAssets);
+                    const floorIdx = document.getElementById('creator-map-select').value;
+                    if (floorIdx !== "") {
+                        loadExistingMapAndDefinitions(Number(floorIdx), mapData, loadedAssets);
+                    } else {
+                        // New Map: clear save lists and just show the map
+                        savedNpcs = [];
+                        savedEnemies = [];
+                        savedTriggers = [];
+                        savedInteractTiles = [];
+                        savedWorldSprites = [];
+                        showCreatorMap(mapData, loadedAssets);
+                    }
                 };
                 reader.readAsDataURL(file);
             }
         });
-
+    
         setTimeout(() => {
             if (Object.keys(loadedAssets).length === 0) {
                 statusDiv.innerHTML = `<span style="color: #ff9800;"><b>No required assets found in selected folder.</b></span>`;
-                showCreatorMap(mapData, {}); // fallback: no assets
+                const floorIdx = document.getElementById('creator-map-select').value;
+                if (floorIdx !== "") {
+                    loadExistingMapAndDefinitions(Number(floorIdx), mapData, {});
+                } else {
+                    // New Map: clear save lists and just show the map
+                    savedNpcs = [];
+                    savedEnemies = [];
+                    savedTriggers = [];
+                    savedInteractTiles = [];
+                    savedWorldSprites = [];
+                    showCreatorMap(mapData, {});
+                }
             }
         }, 500);
     };
@@ -1359,11 +1476,12 @@ function showCreatorMap(mapData, loadedAssets = {}) {
         }
         savedNpcs.forEach(npc => {
             // Highlight wander area
-            if (npc.wanderArea && npc.wanderArea.tiles) {
+            const tiles = getWanderTiles(npc.wanderArea);
+            if (tiles.length) {
                 ctx.save();
                 ctx.globalAlpha = 0.25;
                 ctx.fillStyle = "#ffd700";
-                npc.wanderArea.tiles.forEach(({x, y}) => {
+                tiles.forEach(({x, y}) => {
                     ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
                 });
                 ctx.restore();
@@ -1380,6 +1498,32 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                 ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
                 ctx.stroke();
                 ctx.restore();
+            }
+            if (Array.isArray(npc.spawns)) {
+                npc.spawns.forEach(spawn => {
+                    const tiles = getWanderTiles(spawn.wanderArea);
+                    if (tiles.length) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.25;
+                        ctx.fillStyle = "#ffd700";
+                        tiles.forEach(({x, y}) => {
+                            ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                        });
+                        ctx.restore();
+                    }
+                    if (typeof spawn.x === "number" && typeof spawn.y === "number") {
+                        ctx.save();
+                        ctx.globalAlpha = 0.85;
+                        ctx.strokeStyle = "#00ff00";
+                        ctx.lineWidth = 3;
+                        const centerX = spawn.x * tileSize + tileSize / 2;
+                        const centerY = spawn.y * tileSize + tileSize / 2;
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                });
             }
         });
         // Highlight enemy selection area during selection
@@ -1421,29 +1565,33 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.restore();
         });
         savedEnemies.forEach(enemy => {
-            enemy.spawns.forEach(spawn => {
-                // Draw wander area highlight
-                if (spawn.wanderArea && spawn.wanderArea.tiles) {
-                    ctx.save();
-                    ctx.globalAlpha = 0.25;
-                    ctx.fillStyle = "#ff4444";
-                    spawn.wanderArea.tiles.forEach(({x, y}) => {
-                        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-                    });
-                    ctx.restore();
-                }
-                // Draw spawn marker
-                ctx.save();
-                ctx.globalAlpha = 0.85;
-                ctx.strokeStyle = "#ff4444";
-                ctx.lineWidth = 3;
-                const centerX = spawn.x * tileSize + tileSize / 2;
-                const centerY = spawn.y * tileSize + tileSize / 2;
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.restore();
-            });
+            if (Array.isArray(enemy.spawns)) {
+                enemy.spawns.forEach(spawn => {
+                    const tiles = getWanderTiles(spawn.wanderArea);
+                    if (tiles.length) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.25;
+                        ctx.fillStyle = "#ff4444";
+                        tiles.forEach(({x, y}) => {
+                            ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                        });
+                        ctx.restore();
+                    }
+                    // Spawn marker
+                    if (typeof spawn.x === "number" && typeof spawn.y === "number") {
+                        ctx.save();
+                        ctx.globalAlpha = 0.85;
+                        ctx.strokeStyle = "#ff4444";
+                        ctx.lineWidth = 3;
+                        const centerX = spawn.x * tileSize + tileSize / 2;
+                        const centerY = spawn.y * tileSize + tileSize / 2;
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, tileSize / 3, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                });
+            }
         });
         // Highlight current trigger selection
         if (typeof triggerCreatorState.trigger.x === "number" && typeof triggerCreatorState.trigger.y === "number") {
