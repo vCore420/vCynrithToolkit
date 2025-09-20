@@ -1670,6 +1670,9 @@ function showCreatorMap(mapData, loadedAssets = {}) {
     let lastTouchDist = null;
 
     canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1 || e.touches.length === 2) {
+            e.preventDefault(); // Prevent page scroll
+        }
         if (e.touches.length === 1) {
             isDragging = true;
             const touch = e.touches[0];
@@ -1678,22 +1681,23 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             dragStart.y = touch.clientY - creatorMapOffset.y;
             canvas.style.cursor = "grabbing";
         } else if (e.touches.length === 2) {
-            // Pinch zoom start
             lastTouchDist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
                 e.touches[0].clientY - e.touches[1].clientY
             );
         }
     }, { passive: false });
-
+    
     canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 || e.touches.length === 2) {
+            e.preventDefault(); // Prevent page scroll
+        }
         if (e.touches.length === 1 && isDragging) {
             const touch = e.touches[0];
             creatorMapOffset.x = touch.clientX - dragStart.x;
             creatorMapOffset.y = touch.clientY - dragStart.y;
             drawMap();
         } else if (e.touches.length === 2) {
-            // Pinch zoom
             const dist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
                 e.touches[0].clientY - e.touches[1].clientY
@@ -1702,7 +1706,6 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                 let zoomChange = (dist - lastTouchDist) * 0.005;
                 let oldZoom = creatorMapZoom;
                 creatorMapZoom = Math.max(0.1, Math.min(3, creatorMapZoom + zoomChange));
-                // Center zoom on midpoint between touches
                 const rect = canvas.getBoundingClientRect();
                 const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
                 const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
@@ -1713,8 +1716,9 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             lastTouchDist = dist;
         }
     }, { passive: false });
-
+    
     canvas.addEventListener('touchend', function(e) {
+        e.preventDefault(); // Prevent page scroll
         isDragging = false;
         lastTouch = null;
         lastTouchDist = null;
