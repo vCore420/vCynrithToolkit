@@ -13,6 +13,7 @@
         <button class="tab-btn" data-tab="skills">Skills</button>
         <button class="tab-btn" data-tab="creator">Creator</button>
         <button class="tab-btn" data-tab="tile-maker">Tile Maker</button>
+        <button class="tab-btn" data-tab="tile-editor">Tile Editor</button>
       </aside>
       <main id="main-panel">
         <div id="floor-visualizer-tab" class="editor-tab active"></div>
@@ -22,18 +23,18 @@
             <h2>Floor Creator</h2>
             <input type="file" id="map-json-upload" accept=".json" />
             <div id="creator-map-preview" style="margin-top:16px;">
-                <!-- Map canvas will be injected here -->
             </div>
             <div id="creator-map-controls" style="margin-top:16px;">
-                <!-- Controls for selecting tiles, placing NPCs, etc. -->
             </div>
         </div>
         <div id="tile-maker-tab" class="editor-tab"></div>
+        <div id="tile-editor-tab" class="editor-tab"></div>
       </main>
   </div>
   <script src="main.js"></script>
   <script src="creator.js"></script>
   <script src="tileGen.js"></script>
   <script src="floorVisual.js"></script>
+  <script src="tileEditor.js"></script>
 </body>
 </html>

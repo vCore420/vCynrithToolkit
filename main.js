@@ -181,6 +181,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabId === 'skills-tab') renderSkillsTab();
         if (tabId === 'creator-tab') renderCreatorTab();
         if (tabId === 'tile-maker-tab') renderTileMakerTab();
+        if (tabId === 'tile-editor-tab') renderTileEditorTab();
         
     };
 });
