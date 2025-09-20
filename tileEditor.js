@@ -4,20 +4,31 @@ function renderTileEditorTab() {
   <h2>Tile Editor (PNG)</h2>
   <div style="display:flex; gap:16px;">
     <div style="width:64px;">
-      <div id="te-tool-panel" style="display:flex; flex-direction:column; gap:8px;">
-        <button class="te-tool-btn" data-tool="pencil" title="Pencil"><span>✏️</span></button>
+      <div id="te-tool-panel" style="display:flex; flex-direction:column; gap:10px;">
+        <button class="te-tool-btn" data-tool="pencil" title="Pencil"><span>🖉</span></button>
         <button class="te-tool-btn" data-tool="eraser" title="Eraser"><span>🧽</span></button>
-        <button class="te-tool-btn" data-tool="picker" title="Eyedropper"><span>🎨</span></button>
+        <button class="te-tool-btn" data-tool="picker" title="Eyedropper"><span>🧪</span></button>
         <button class="te-tool-btn" data-tool="fill" title="Fill"><span>🪣</span></button>
+        <button class="te-tool-btn" data-tool="rect" title="Rectangle"><span>▭</span></button>
+        <button class="te-tool-btn" data-tool="line" title="Line"><span>━</span></button>
+        <button class="te-tool-btn" data-tool="circle" title="Circle"><span>◯</span></button>
+        <button class="te-tool-btn" data-tool="ellipse" title="Ellipse"><span>◎</span></button>
+        <button id="te-flip-h" title="Flip Horizontal"><span>⇆</span></button>
+        <button id="te-flip-v" title="Flip Vertical"><span>⇅</span></button>
       </div>
       <div style="margin-top:16px;">
-        <button id="te-undo" title="Undo">⏪</button>
-        <button id="te-redo" title="Redo">⏩</button>
+        <button id="te-undo" title="Undo"><span>↶</span></button>
+        <button id="te-redo" title="Redo"><span>↷</span></button>
       </div>
     </div>
     <div style="flex:1; display:flex; flex-direction:column;">
-      <div style="display:flex; gap:12px; align-items:center; margin-bottom:8px;">
+      <div id="te-top-controls">
         <input type="file" id="te-file" accept="image/png" />
+        <span>
+          <button id="te-new-image" type="button">New Image</button>
+          <input type="number" id="te-new-width" min="1" max="256" value="32" style="width:50px;" title="Width" />
+          <input type="number" id="te-new-height" min="1" max="256" value="32" style="width:50px;" title="Height" />
+        </span>
         <label>Color <input type="color" id="te-color" value="#ff00aa"/></label>
         <label>Brush <input type="number" id="te-brush" min="1" max="16" value="1" /></label>
         <button id="te-export">Export PNG</button>
@@ -40,6 +51,20 @@ const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const colorEl = document.getElementById('te-color');
 const brushEl = document.getElementById('te-brush');
 const gridEl = document.getElementById('te-grid');
+
+document.getElementById('te-new-image').onclick = () => {
+    const w = Math.max(1, Math.min(256, parseInt(document.getElementById('te-new-width').value, 10) || 32));
+    const h = Math.max(1, Math.min(256, parseInt(document.getElementById('te-new-height').value, 10) || 32));
+    imgCanvas.width = w;
+    imgCanvas.height = h;
+    imgCtx.clearRect(0,0,w,h);
+    imgData = imgCtx.getImageData(0, 0, w, h);
+    undo.length = 0; redo.length = 0;
+    offset = { x: 0, y: 0 };
+    zoom = Math.max(8, Math.floor(512 / Math.max(w, h)));
+    resizeCanvasView();
+    draw();
+};
 
 document.querySelectorAll('.te-tool-btn').forEach(b => {
     b.onclick = () => {
@@ -67,6 +92,8 @@ document.getElementById('te-zoom-reset').onclick = () => {
     offset = { x: 0, y: 0 };
     resizeCanvasView();
 };
+document.getElementById('te-flip-h').onclick = () => flipHorizontal();
+document.getElementById('te-flip-v').onclick = () => flipVertical();
 
 document.getElementById('te-grid').onchange = () => draw();
 
@@ -81,6 +108,8 @@ let isPanning = false;
 let isDrawing = false;
 let lastPt = null;
 let hoverPt = null;
+let shapeStart = null;
+let shapePreview = null;
 const undo = [];
 const redo = [];
 const dpr = window.devicePixelRatio || 1;
@@ -168,6 +197,51 @@ function draw() {
         ctx.stroke();
         ctx.restore();
     }
+    if (isDrawing && shapeStart && shapePreview && (tool === 'rect' || tool === 'line' || tool === 'circle')) {
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = "#4a90e2";
+        ctx.lineWidth = 2;
+        const a = shapeStart, b = shapePreview;
+        if (tool === 'rect') {
+          ctx.strokeRect(
+            offset.x + Math.min(a.x, b.x) * zoom,
+            offset.y + Math.min(a.y, b.y) * zoom,
+            (Math.abs(b.x - a.x) + 1) * zoom,
+            (Math.abs(b.y - a.y) + 1) * zoom
+          );
+        }
+        if (tool === 'line') {
+          ctx.beginPath();
+          ctx.moveTo(offset.x + a.x * zoom, offset.y + a.y * zoom);
+          ctx.lineTo(offset.x + b.x * zoom, offset.y + b.y * zoom);
+          ctx.stroke();
+        }
+        if (tool === 'circle') {
+          ctx.beginPath();
+          const r = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y) * zoom);
+          ctx.arc(offset.x + a.x * zoom, offset.y + a.y * zoom, r, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        if (isDrawing && shapeStart && shapePreview && tool === 'ellipse') {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.strokeStyle = "#4a90e2";
+            ctx.lineWidth = 2;
+            const a = shapeStart, b = shapePreview;
+            ctx.beginPath();
+            ctx.ellipse(
+              offset.x + a.x * zoom,
+              offset.y + a.y * zoom,
+              Math.abs(b.x - a.x) * zoom,
+              Math.abs(b.y - a.y) * zoom,
+              0, 0, 2 * Math.PI
+            );
+            ctx.stroke();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
 }
 
   function toImgXY(e) {
@@ -185,6 +259,93 @@ function draw() {
     imgData.data[i + 1] = rgba[1];
     imgData.data[i + 2] = rgba[2];
     imgData.data[i + 3] = rgba[3];
+}
+
+function drawRect(a, b, rgba) {
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x);
+    const y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        putPixel(x, y, rgba);
+      }
+    }
+}
+
+function drawCircle(a, b, rgba) {
+    const cx = a.x, cy = a.y;
+    const r = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y)));
+    for (let y = -r; y <= r; y++) {
+      for (let x = -r; x <= r; x++) {
+        if (x*x + y*y <= r*r) {
+          putPixel(cx + x, cy + y, rgba);
+        }
+      }
+    }
+}
+
+function drawEllipse(a, b, rgba) {
+    const cx = a.x, cy = a.y;
+    const rx = Math.abs(b.x - a.x);
+    const ry = Math.abs(b.y - a.y);
+    for (let y = -ry; y <= ry; y++) {
+        for (let x = -rx; x <= rx; x++) {
+            if ((x*x)/(rx*rx) + (y*y)/(ry*ry) <= 1) {
+                putPixel(cx + x, cy + y, rgba);
+            }
+        }
+    }
+}
+
+function flipHorizontal() {
+    for (let y = 0; y < imgData.height; y++) {
+        for (let x = 0; x < imgData.width / 2; x++) {
+            const i1 = (y * imgData.width + x) * 4;
+            const i2 = (y * imgData.width + (imgData.width - 1 - x)) * 4;
+            for (let k = 0; k < 4; k++) {
+                const tmp = imgData.data[i1 + k];
+                imgData.data[i1 + k] = imgData.data[i2 + k];
+                imgData.data[i2 + k] = tmp;
+            }
+        }
+    }
+    imgCtx.putImageData(imgData, 0, 0);
+    draw();
+}
+
+function flipVertical() {
+    for (let y = 0; y < imgData.height / 2; y++) {
+        for (let x = 0; x < imgData.width; x++) {
+            const i1 = (y * imgData.width + x) * 4;
+            const i2 = ((imgData.height - 1 - y) * imgData.width + x) * 4;
+            for (let k = 0; k < 4; k++) {
+                const tmp = imgData.data[i1 + k];
+                imgData.data[i1 + k] = imgData.data[i2 + k];
+                imgData.data[i2 + k] = tmp;
+            }
+        }
+    }
+    imgCtx.putImageData(imgData, 0, 0);
+    draw();
+}
+
+function replaceColor(targetHex, replaceHex) {
+    const target = hexToRgba(targetHex);
+    const replace = hexToRgba(replaceHex);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+        if (
+            imgData.data[i] === target[0] &&
+            imgData.data[i + 1] === target[1] &&
+            imgData.data[i + 2] === target[2] &&
+            imgData.data[i + 3] === target[3]
+        ) {
+            imgData.data[i] = replace[0];
+            imgData.data[i + 1] = replace[1];
+            imgData.data[i + 2] = replace[2];
+            imgData.data[i + 3] = replace[3];
+        }
+    }
+    imgCtx.putImageData(imgData, 0, 0);
+    draw();
 }
 
   function hexToRgba(hex) {
@@ -279,18 +440,19 @@ canvas.addEventListener('pointerdown', (e) => {
     pushUndo();
     isDrawing = true;
     const pt = toImgXY(e);
-    if (tool === 'picker') {
-      const i = (pt.y * imgData.width + pt.x) * 4;
-      const r = imgData.data[i], g = imgData.data[i+1], b = imgData.data[i+2];
-      colorEl.value = `#${[r,g,b].map(v => v.toString(16).padStart(2,'0')).join('')}`;
-      isDrawing = false;
-    } else if (tool === 'fill') {
-      const i = (pt.y * imgData.width + pt.x) * 4;
-      const tgt = [imgData.data[i], imgData.data[i+1], imgData.data[i+2], imgData.data[i+3]];
-      floodFill(pt.x, pt.y, tgt, hexToRgba(colorEl.value));
-    } else {
+    if (tool === 'picker') { /* ... */ }
+    else if (tool === 'fill') { /* ... */ }
+    else if (tool === 'rect' || tool === 'line' || tool === 'circle') {
+      shapeStart = pt;
+      shapePreview = pt;
+    }
+    else {
       lastPt = pt;
       drawBrush(pt);
+    }
+    if (tool === 'ellipse') {
+        shapeStart = pt;
+        shapePreview = pt;
     }
     imgCtx.putImageData(imgData, 0, 0);
     draw();
@@ -309,7 +471,17 @@ canvas.addEventListener('pointermove', (e) => {
       hoverPt = toImgXY(e);
       draw();
     }
+    if (isDrawing && (tool === 'rect' || tool === 'line' || tool === 'circle')) {
+        shapePreview = toImgXY(e);
+        draw();
+        return;
+      }
     if (!isDrawing || (tool !== 'pencil' && tool !== 'eraser')) return;
+    if (isDrawing && tool === 'ellipse') {
+        shapePreview = toImgXY(e);
+        draw();
+        return;
+    }
     const pt = toImgXY(e);
     line(lastPt, pt);
     lastPt = pt;
@@ -321,6 +493,26 @@ canvas.addEventListener('pointerleave', () => {
     hoverPt = null;
     draw();
 });
+canvas.addEventListener('pointerup', (e) => {
+    if (isDrawing && shapeStart && shapePreview && (tool === 'rect' || tool === 'line' || tool === 'circle')) {
+      // Draw the final shape to imgData
+      if (tool === 'rect') drawRect(shapeStart, shapePreview, hexToRgba(colorEl.value));
+      if (tool === 'line') line(shapeStart, shapePreview);
+      if (tool === 'circle') drawCircle(shapeStart, shapePreview, hexToRgba(colorEl.value));
+      imgCtx.putImageData(imgData, 0, 0);
+      shapeStart = null;
+      shapePreview = null;
+      draw();
+    }
+    if (isDrawing && shapeStart && shapePreview && tool === 'ellipse') {
+        drawEllipse(shapeStart, shapePreview, hexToRgba(colorEl.value));
+        imgCtx.putImageData(imgData, 0, 0);
+        shapeStart = null;
+        shapePreview = null;
+        draw();
+    }
+    endStroke(e);
+}, { passive: true });
 
 function endStroke(e) { isDrawing = false; isPanning = false; lastPt = null; }
   canvas.addEventListener('pointerup', endStroke, { passive: true });
@@ -333,3 +525,4 @@ function endStroke(e) { isDrawing = false; isPanning = false; lastPt = null; }
   resizeCanvasView();
   draw();
 }
+

@@ -2202,7 +2202,7 @@ function getQuestDefinitionCode(npc) {
 function renderTileMakerTab() {
     const tab = document.getElementById('tile-maker-tab');
     tab.innerHTML = `
-        <h2>Tile Maker</h2>
+        <h2>Tile Generator</h2>
         <div id="tile-maker-layout" style="display:flex; gap:32px;">
             <div id="tile-maker-left-panel" style="width:340px;">
                 <div id="tile-maker-controls"></div>

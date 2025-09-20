@@ -370,35 +370,137 @@ label > input[type="checkbox"] {
 }
 
 #te-tool-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   background: #232634;
-  border-radius: 8px;
-  padding: 8px 4px;
+  border-radius: 12px;
+  padding: 6px 4px;
   box-shadow: 0 2px 8px #0002;
   align-items: center;
 }
 
-.te-tool-btn {
-  width: 40px;
-  height: 40px;
+.te-tool-btn, #te-flip-h, #te-flip-v {
   background: #35374a;
   border: none;
-  border-radius: 6px;
-  margin: 0;
-  padding: 0;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.5em;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 4px #0001;
 }
 
-.te-tool-btn.active,
-.te-tool-btn:hover {
-  background: #4a4e69;
-  box-shadow: 0 0 0 2px #9a8c98;
+.te-tool-btn.active, .te-tool-btn:hover, #te-flip-h:hover, #te-flip-v:hover {
+  background: #4a90e2;
+  color: #fff;
+  box-shadow: 0 2px 8px #4a90e233;
 }
 
 #te-tool-panel button:focus {
-  outline: 2px solid #9a8c98;
+  outline: 2px solid #ffd700;
 }
+
+#te-tool-panel span {
+  pointer-events: none;
+}
+
+#te-undo, #te-redo {
+  background: #35374a;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.4em;
+  width: 40px;
+  height: 40px;
+  margin: 12px;
+  display: flex;  
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#te-undo:hover, #te-redo:hover {
+  background: #4a90e2;
+  color: #fff;
+}
+
+/* Top controls bar styling */
+#te-top-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  background: #232634;
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 8px #0002;
+  max-width: 540px; /* Limit width so it doesn't span the whole page */
+}
+
+/* Style for all buttons in top controls */
+#te-top-controls button,
+#te-top-controls input[type="file"] {
+  background: #35374a;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 0.95em;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 4px #0001;
+}
+
+#te-top-controls button:hover,
+#te-top-controls input[type="file"]:hover {
+  background: #4a90e2;
+  color: #fff;
+  box-shadow: 0 2px 8px #4a90e233;
+}
+
+#te-top-controls label {
+  color: #eaeaea;
+  font-size: 0.95em;
+  margin-right: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#te-top-controls input[type="color"],
+#te-top-controls input[type="number"] {
+  border-radius: 5px;
+  border: 1px solid #35374a;
+  background: #232634;
+  color: #fff;
+  padding: 1px 4px;
+  font-size: 0.95em;
+  height: 28px;
+  width: 44px;
+}
+
+#te-top-controls input[type="checkbox"] {
+  accent-color: #4a90e2;
+  width: 16px;
+  height: 16px;
+}
+
+#te-top-controls span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
