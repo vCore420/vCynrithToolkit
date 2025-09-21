@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <link rel="manifest" href="assets/manifest.json">
+  <meta name="theme-color" content="#232634">
   <title>Cynrith Toolkit</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
   <div id="loading-overlay" style="
@@ -21,30 +23,38 @@
         <button class="tab-btn" data-tab="floor-visualizer">Floor Visualizer</button>
         <button class="tab-btn" data-tab="items">Items</button>
         <button class="tab-btn" data-tab="skills">Skills</button>
-        <button class="tab-btn" data-tab="creator">Creator</button>
         <button class="tab-btn" data-tab="tile-maker">Tile Generator</button>
         <button class="tab-btn" data-tab="tile-editor">Tile Editor</button>
+        <button class="tab-btn" data-tab="map-creator">Map Creator</button>
+        <button class="tab-btn" data-tab="creator">Floor Creator</button>
       </aside>
       <main id="main-panel">
         <div id="floor-visualizer-tab" class="editor-tab active"></div>
         <div id="items-tab" class="editor-tab"></div>
         <div id="skills-tab" class="editor-tab"></div>
-        <div id="creator-tab" class="editor-tab">
-            <h2>Floor Creator</h2>
-            <input type="file" id="map-json-upload" accept=".json" />
-            <div id="creator-map-preview" style="margin-top:16px;">
-            </div>
-            <div id="creator-map-controls" style="margin-top:16px;">
-            </div>
-        </div>
         <div id="tile-maker-tab" class="editor-tab"></div>
         <div id="tile-editor-tab" class="editor-tab"></div>
+        <div id="map-creator-tab" class="editor-tab"></div>
+        <div id="creator-tab" class="editor-tab">
+          <h2>Floor Creator</h2>
+          <input type="file" id="map-json-upload" accept=".json" />
+          <div id="creator-map-preview" style="margin-top:16px;">
+          </div>
+          <div id="creator-map-controls" style="margin-top:16px;">
+          </div>
+      </div>
       </main>
   </div>
-  <script src="main.js"></script>
-  <script src="creator.js"></script>
-  <script src="tileGen.js"></script>
-  <script src="floorVisual.js"></script>
-  <script src="tileEditor.js"></script>
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/creator.js"></script>
+  <script src="assets/js/tileGen.js"></script>
+  <script src="assets/js/floorVisual.js"></script>
+  <script src="assets/js/tileEditor.js"></script>
+  <script src="assets/js/mapCreator.js"></script> 
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('assets/service-worker.js');
+    }
+  </script>
 </body>
 </html>

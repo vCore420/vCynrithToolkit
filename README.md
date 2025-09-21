@@ -16,8 +16,9 @@ It provides a modern interface for building NPCs, quests, items, skills, tiles, 
 - **Item & Skill Editors:** Manage game items and skills with live previews, stats, buffs, drawbacks, and images.
 - **Tile Maker:** Generate pixel art tiles with custom palettes, symmetry, patterns, and export options.
 - **Tile Editor:** Import PNG images, edit with pencil, eraser, fill, eyedropper, brush size, grid, undo/redo, and export as PNG.
+- **Map Creator:** Design and edit tile-based maps with multi-layer support, grid, zoom/pan, spawn/teleport point setting, XP requirements, and export to game-ready JSON.
 - **Live Preview:** Instantly see formatted output matching Cynrith’s game definitions for all entity types.
-- **Download Definitions:** Export definitions for NPCs, enemies, quests, items, skills, triggers, interact tiles, and sprites.
+- **Download Definitions:** Export definitions for NPCs, enemies, quests, items, skills, triggers, interact tiles, sprites, and maps.
 - **Touch & Pointer Support:** Full mouse/touch/pointer support for map and tile editing, including drag, zoom, and brush preview.
 - **Autosave & Undo/Redo:** Work safely with undo/redo and session autosave (where supported).
 - **Responsive UI:** Modern, responsive layout with tool panels and visual feedback.
@@ -34,7 +35,8 @@ It provides a modern interface for building NPCs, quests, items, skills, tiles, 
 
 ## Usage
 
-- Use the sidebar tabs to switch between editors (Floor Visualizer, Items, Skills, Creator, Tile Maker, Tile Editor).
+- Use the sidebar tabs to switch between editors (Floor Visualizer, Items, Skills, Creator, Tile Maker, Tile Editor, **Map Creator**).
+- In **Map Creator**, design tile maps, set spawn and teleport points, specify XP required to leave, and export maps in Cynrith-compatible JSON format.
 - Fill out forms and use controls to create or edit game content.
 - Preview output in the right panel; copy and paste definitions directly into your game’s data files.
 - Use the map and tile editors for visual placement, drawing, and asset creation.
