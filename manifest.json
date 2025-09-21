@@ -1,6 +1,6 @@
 {
   "name": "Cynrith Toolkit",
-  "short_name": "Cynrith",
+  "short_name": "Cynrith Toolkit",
   "description": "Browser-based editor and toolkit for Cynrith game development.",
   "start_url": "./index.html",
   "display": "standalone",
