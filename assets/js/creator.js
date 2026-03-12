@@ -184,6 +184,7 @@ function renderCreatorTab() {
                     <option value="2">Floor 3: Gloomroot Thicket</option>
                     <option value="3">Floor 4: The Shattered Spires</option>
                     <option value="4">Floor 5: Umbracourt</option>
+                    <option value="5">Floor 6: the Waystation Veil</option>
                 </select>
             </label>
         </div>
