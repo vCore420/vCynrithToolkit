@@ -39,12 +39,6 @@ function renderMapCreatorTab() {
             </div>
             <div id="mc-layers" style="display:flex; flex-direction:column; gap:6px; margin-top:6px;"></div>
           </div>
-
-          <label>
-            <input type="checkbox" id="mc-bg-music" />
-            Background Music
-          </label>
-          <input type="text" id="mc-bg-music-file" placeholder="e.g., theme.mp3" style="display:none;" />
           
           <div style="margin-top:32px; display:flex; flex-direction:column; gap:8px;">
             <button id="mc-set-spawn">Set Spawn Point</button>
@@ -54,6 +48,12 @@ function renderMapCreatorTab() {
             <input type="number" id="mc-xp-required" min="0" value="0" style="width:90px;">
             </label>
             <button id="mc-clear-spawn-teleport">Clear Spawn/Teleport</button>
+          
+            <label>
+              <input type="checkbox" id="mc-bg-music" />
+              Background Music
+            </label>
+            <input type="text" id="mc-bg-music-file" placeholder="e.g., theme.mp3" style="display:none;" />
           </div>
   
           <div>
