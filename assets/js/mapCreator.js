@@ -51,9 +51,10 @@ function renderMapCreatorTab() {
           
             <label>
               <input type="checkbox" id="mc-bg-music" />
-              Background Music
+              Background Music?
             </label>
-            <input type="text" id="mc-bg-music-file" placeholder="e.g., theme.mp3";" />
+              Mp3 Filename:
+              <input type="text" id="mc-bg-music-file" placeholder="e.g. theme.mp3" style="width:90px;" />
           </div>
   
           <div>
