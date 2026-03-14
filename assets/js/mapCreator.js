@@ -40,6 +40,12 @@ function renderMapCreatorTab() {
             <div id="mc-layers" style="display:flex; flex-direction:column; gap:6px; margin-top:6px;"></div>
           </div>
 
+          <label>
+            <input type="checkbox" id="mc-bg-music" />
+            Background Music
+          </label>
+          <input type="text" id="mc-bg-music-file" placeholder="e.g., theme.mp3" style="display:none;" />
+          
           <div style="margin-top:32px; display:flex; flex-direction:column; gap:8px;">
             <button id="mc-set-spawn">Set Spawn Point</button>
             <button id="mc-set-teleport">Set Teleport Point</button>
@@ -93,6 +99,8 @@ function renderMapCreatorTab() {
         rectStart: null,
         offset: { x: 0, y: 0 }, // panning if needed later
         dpr: window.devicePixelRatio || 1,
+        bgMusicEnabled: false,  // New: Checkbox state
+        bgMusicFile: "",
     };
   
     // Canvas setup
@@ -401,6 +409,17 @@ function renderMapCreatorTab() {
       state.currentLayer = Math.max(0, state.currentLayer-1);
       renderLayersUI(); draw();
     };
+
+    document.getElementById('mc-bg-music').onchange = (e) => {
+        state.bgMusicEnabled = e.target.checked;
+        const inputEl = document.getElementById('mc-bg-music-file');
+        inputEl.style.display = state.bgMusicEnabled ? 'block' : 'none';
+        if (!state.bgMusicEnabled) state.bgMusicFile = "";
+    };
+    
+    document.getElementById('mc-bg-music-file').oninput = (e) => {
+        state.bgMusicFile = e.target.value.trim();
+    };
   
     document.getElementById('mc-set-spawn').onclick = () => {
         settingSpawn = true;
@@ -588,7 +607,9 @@ function renderMapCreatorTab() {
             output += `  "spawn": { "x": ${json.spawn.x}, "y": ${json.spawn.y} },\n`;
         if (json.teleport)
             output += `  "teleport": { "x": ${json.teleport.x}, "y": ${json.teleport.y}, "xpRequired": ${json.teleport.xpRequired} },\n`;
-    
+        if (json.bgMusic) 
+            output += `  "bgMusic": ${JSON.stringify(json.bgMusic)},\n`;
+
         // Assets
         output += `  "assets": [\n`;
         json.assets.forEach((a, i) => {
@@ -693,6 +714,7 @@ function renderMapCreatorTab() {
       };
       if (state.spawn) out.spawn = { x: state.spawn.x, y: state.spawn.y };
       if (state.teleport) out.teleport = { x: state.teleport.x, y: state.teleport.y, xpRequired: state.teleport.xpRequired || 0 };
+      if (state.bgMusicEnabled && state.bgMusicFile) out.bgMusic = state.bgMusicFile; 
       return out;
     }
   }
