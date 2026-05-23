@@ -12,6 +12,7 @@ function renderFloorVisualizer() {
         <option value="3">Floor 4: The Shattered Spires</option>
         <option value="4">Floor 5: Umbracourt</option>
         <option value="5">Floor 6: The Waystation Veil</option>
+        <option value="6">Floor 7: The Withering Archipelago</option>
         </select>
         <div id="floor-links"></div>
     `;
