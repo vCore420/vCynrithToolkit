@@ -170,7 +170,15 @@ function normalizeIdFromName(name) {
 }
 
 // Creator Tab Render
+let __creatorInitialized = false;
 function renderCreatorTab() {
+    // Only build the Floor Creator shell once per session. creatorState,
+    // savedNpcs, savedEnemies, etc. already live at module scope so they
+    // survive tab switches, but without this guard the upload wizard and
+    // map preview canvas would still get torn down and have to be redone.
+    if (__creatorInitialized) return;
+    __creatorInitialized = true;
+
     const tab = document.getElementById('creator-tab');
     tab.innerHTML = `
         <h2>Floor Creator</h2>
@@ -2201,7 +2209,13 @@ function getQuestDefinitionCode(npc) {
 },`;
 }
 
+let __tileMakerInitialized = false;
 function renderTileMakerTab() {
+    // Only build the Tile Generator once per session so the palette,
+    // generated tile, and settings don't reset when switching tabs.
+    if (__tileMakerInitialized) return;
+    __tileMakerInitialized = true;
+
     const tab = document.getElementById('tile-maker-tab');
     tab.innerHTML = `
         <h2>Tile Generator</h2>

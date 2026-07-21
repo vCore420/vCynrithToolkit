@@ -1,7 +1,18 @@
+let __mcInitialized = false;
 function renderMapCreatorTab() {
+    // Only build the Map Creator once per session. The tab is shown/hidden
+    // with CSS (see .editor-tab / .editor-tab.active), not removed from the
+    // DOM, so once built, the canvas, layers, assets, spawn/teleport points,
+    // etc. all stay intact when you switch away and come back.
+    if (__mcInitialized) return;
+    __mcInitialized = true;
+
     const tab = document.getElementById('map-creator-tab');
     tab.innerHTML = `
       <h2>Map Creator</h2>
+      <div style="margin-bottom:12px;">
+        <button id="mc-new-map" style="background:#7a2626;">🗋 New Map</button>
+      </div>
       <div id="map-creator-layout">
         <div id="mc-left">
           <div id="mc-tools">
@@ -111,6 +122,8 @@ function renderMapCreatorTab() {
     let isDraggingMap = false;
     let dragStart = { x: 0, y: 0 };
     let hoverTile = null;
+    let settingSpawn = false;
+    let settingTeleport = false;
 
     // Helpers
     function idx(x, y) { return y * state.width + x; }
@@ -165,7 +178,7 @@ function renderMapCreatorTab() {
         ctx.restore();
     }
     function draw() {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       
         ctx.save();
@@ -241,8 +254,8 @@ function renderMapCreatorTab() {
     function screenToTile(mx, my) {
         const rect = canvas.getBoundingClientRect();
         // Scale mouse coordinates to match internal canvas pixels
-        const mouseX = ((mx - rect.left) * state.dpr - state.offset.x) / state.zoom;
-        const mouseY = ((my - rect.top) * state.dpr - state.offset.y) / state.zoom;
+        const mouseX = ((mx - rect.left) - state.offset.x) / state.zoom;
+        const mouseY = ((my - rect.top) - state.offset.y) / state.zoom;
         const tx = Math.floor(mouseX / state.tw);
         const ty = Math.floor(mouseY / state.th);
         if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return null;
@@ -444,6 +457,48 @@ function renderMapCreatorTab() {
         draw();
     };
 
+    // New Map: reset everything back to a blank starting state. This is the
+    // deliberate way to start over now that switching tabs no longer does it
+    // by accident.
+    document.getElementById('mc-new-map').onclick = () => {
+        const ok = confirm('Start a new map? This clears the current map, layers, loaded tileset images, and spawn/teleport points.');
+        if (!ok) return;
+
+        state.width = 32;
+        state.height = 32;
+        state.tw = 64;
+        state.th = 64;
+        state.zoom = 1;
+        state.offset = { x: 0, y: 0 };
+        state.assets = [];
+        state.selectedAsset = -1;
+        state.layers = [];
+        state.currentLayer = 0;
+        state.tool = 'pencil';
+        state.spawn = null;
+        state.teleport = null;
+        state.xpRequired = 0;
+        state.bgMusicEnabled = false;
+        state.bgMusicFile = '';
+
+        document.getElementById('mc-width').value = state.width;
+        document.getElementById('mc-height').value = state.height;
+        document.getElementById('mc-tw').value = state.tw;
+        document.getElementById('mc-th').value = state.th;
+        document.getElementById('mc-xp-required').value = 0;
+        document.getElementById('mc-bg-music').checked = false;
+        document.getElementById('mc-bg-music-file').value = '';
+        document.getElementById('mc-bg-music-file').style.display = 'none';
+        document.querySelectorAll('#mc-tools button').forEach(b => b.classList.remove('active'));
+        document.querySelector('#mc-tools button[data-tool="pencil"]').classList.add('active');
+
+        addLayer('Layer 1');
+        resizeCanvas();
+        refreshPalette();
+        renderAssetProps();
+        draw();
+    };
+
     // Canvas interactions
     function currentGid() {
       return state.selectedAsset >= 0 ? (state.selectedAsset + 1) : 0;
@@ -580,6 +635,18 @@ function renderMapCreatorTab() {
         state.offset.y = 0;
         draw();
     };
+
+    // Mouse-wheel zoom-to-cursor and two-finger pinch zoom/pan (shared with
+    // Tile Editor and Floor Creator via canvasViewport.js).
+    attachCanvasZoomPan(canvas, {
+        getZoom: () => state.zoom,
+        setZoom: (z) => { state.zoom = z; },
+        getOffset: () => state.offset,
+        setOffset: (o) => { state.offset.x = o.x; state.offset.y = o.y; },
+        minZoom: 0.05,
+        maxZoom: 8,
+        onChange: draw
+    });
   
     function formatLayerData(data, width) {
         let out = '';

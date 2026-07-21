@@ -1,4 +1,10 @@
+let __teInitialized = false;
 function renderTileEditorTab() {
+  // Only build the Tile Editor once per session so the current image,
+  // undo/redo history, and zoom/pan don't get wiped when switching tabs.
+  if (__teInitialized) return;
+  __teInitialized = true;
+
   const tab = document.getElementById('tile-editor-tab'); // reuse the Tile Maker tab, or add a new tab if you prefer
   tab.innerHTML = `
   <h2>Tile Editor (PNG)</h2>
@@ -92,6 +98,22 @@ document.getElementById('te-zoom-reset').onclick = () => {
     offset = { x: 0, y: 0 };
     resizeCanvasView();
 };
+
+// Mouse-wheel zoom-to-cursor and two-finger pinch zoom/pan (shared with Map
+// Creator and Floor Creator via canvasViewport.js). Single-finger touch is
+// left untouched so drawing with a finger/pen keeps working via the pointer
+// events below.
+attachCanvasZoomPan(canvas, {
+    getZoom: () => zoom,
+    setZoom: (z) => { zoom = z; },
+    getOffset: () => offset,
+    setOffset: (o) => { offset = o; },
+    minZoom: 2,
+    maxZoom: 64,
+    zoomStep: 2,
+    pinchZoomSpeed: 0.12, // tile editor's zoom scale (2-64) is much larger than a 0-1 style zoom factor, so pinch needs to move it more per pixel of finger travel
+    onChange: draw
+});
 document.getElementById('te-flip-h').onclick = () => flipHorizontal();
 document.getElementById('te-flip-v').onclick = () => flipVertical();
 
