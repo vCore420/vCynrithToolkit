@@ -572,6 +572,7 @@ label > input[type="checkbox"] {
   background-size: 24px 24px;
   background-position: 0 0, 12px 12px;
   image-rendering: pixelated;
+  touch-action: none;
 }
 
 #mc-tools {
