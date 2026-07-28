@@ -70,6 +70,7 @@ document.getElementById('te-new-image').onclick = () => {
     zoom = Math.max(8, Math.floor(512 / Math.max(w, h)));
     resizeCanvasView();
     draw();
+    Autosave.save(AUTOSAVE_KEY, serializeState()); // persist immediately, don't wait for the debounce
 };
 
 document.querySelectorAll('.te-tool-btn').forEach(b => {
@@ -127,6 +128,33 @@ let tool = 'pencil';
 let zoom = 16; // pixels per image pixel
 let offset = { x: 0, y: 0 };
 let isPanning = false;
+let spaceHeld = false;
+
+function isTypingTarget(el) {
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+
+window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (isTypingTarget(e.target)) return;
+    if (!document.getElementById('tile-editor-tab').classList.contains('active')) return;
+    if (!spaceHeld) {
+        spaceHeld = true;
+        canvas.style.cursor = 'grab';
+    }
+    e.preventDefault(); // stop the page from scrolling on space
+});
+
+window.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space') return;
+    spaceHeld = false;
+    if (!isPanning) canvas.style.cursor = 'crosshair';
+});
+
+window.addEventListener('blur', () => {
+    spaceHeld = false;
+    if (!isPanning) canvas.style.cursor = 'crosshair';
+});
 let isDrawing = false;
 let lastPt = null;
 let hoverPt = null;
@@ -264,6 +292,7 @@ function draw() {
         }
         ctx.restore();
     }
+    scheduleAutosave();
 }
 
   function toImgXY(e) {
@@ -454,8 +483,9 @@ document.getElementById('te-export').onclick = () => {
 canvas.addEventListener('pointerdown', (e) => {
     if (!imgData) return;
     canvas.setPointerCapture(e.pointerId);
-    if (e.button === 1 || e.ctrlKey || e.metaKey || e.spaceKey) {
+    if (e.button === 1 || e.ctrlKey || e.metaKey || spaceHeld) {
       isPanning = true;
+      canvas.style.cursor = 'grabbing';
       lastPt = { x: e.clientX, y: e.clientY };
       return;
     }
@@ -536,9 +566,61 @@ canvas.addEventListener('pointerup', (e) => {
     endStroke(e);
 }, { passive: true });
 
-function endStroke(e) { isDrawing = false; isPanning = false; lastPt = null; }
+function endStroke(e) {
+    isDrawing = false;
+    isPanning = false;
+    lastPt = null;
+    canvas.style.cursor = spaceHeld ? 'grab' : 'crosshair';
+}
   canvas.addEventListener('pointerup', endStroke, { passive: true });
   canvas.addEventListener('pointercancel', endStroke, { passive: true });
+
+// --- Autosave: persists to IndexedDB so work survives a full page reload,
+// not just switching tabs (see autosave.js). Undo/redo history is not
+// persisted -- only the current canvas and view settings. ---
+const AUTOSAVE_KEY = 'tileEditor';
+
+function serializeState() {
+    return {
+        width: imgCanvas.width,
+        height: imgCanvas.height,
+        dataUrl: imgCanvas.toDataURL('image/png'),
+        zoom, offset, tool,
+        color: colorEl.value,
+        brush: brushEl.value,
+        grid: gridEl.checked
+    };
+}
+
+const scheduleAutosave = Autosave.debounce(() => {
+    Autosave.save(AUTOSAVE_KEY, serializeState());
+}, 1200);
+
+async function restoreAutosave() {
+    const saved = await Autosave.load(AUTOSAVE_KEY);
+    if (!saved) return;
+    try {
+        const img = await Autosave.dataUrlToImage(saved.dataUrl);
+        imgCanvas.width = saved.width || img.width;
+        imgCanvas.height = saved.height || img.height;
+        imgCtx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+        imgCtx.drawImage(img, 0, 0);
+        imgData = imgCtx.getImageData(0, 0, imgCanvas.width, imgCanvas.height);
+        undo.length = 0;
+        redo.length = 0;
+        zoom = saved.zoom || 16;
+        offset = saved.offset || { x: 0, y: 0 };
+        tool = saved.tool || 'pencil';
+        colorEl.value = saved.color || '#ff00aa';
+        brushEl.value = saved.brush || 1;
+        gridEl.checked = saved.grid !== false;
+        document.querySelectorAll('.te-tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+        resizeCanvasView();
+        draw();
+    } catch (err) {
+        console.warn('Tile Editor: failed to restore autosave', err);
+    }
+}
 
   // Init blank 32x32 if no import
   imgCanvas.width = 32; imgCanvas.height = 32;
@@ -546,5 +628,8 @@ function endStroke(e) { isDrawing = false; isPanning = false; lastPt = null; }
   imgData = imgCtx.getImageData(0, 0, 32, 32);
   resizeCanvasView();
   draw();
+
+  // Restore any previously autosaved tile now that setup is complete.
+  restoreAutosave();
 }
 

@@ -250,6 +250,7 @@ function renderMapCreatorTab() {
             ctx.restore();
           }
         ctx.restore();
+        scheduleAutosave();
     }
     function screenToTile(mx, my) {
         const rect = canvas.getBoundingClientRect();
@@ -276,6 +277,87 @@ function renderMapCreatorTab() {
           L.data[idx(x,y)] = gid;
         }
       }
+    }
+
+    // --- Autosave: persists to IndexedDB so work survives a full page
+    // reload, not just switching tabs (see autosave.js). ---
+    const AUTOSAVE_KEY = 'mapCreator';
+
+    function serializeState() {
+        return {
+            width: state.width, height: state.height, tw: state.tw, th: state.th,
+            zoom: state.zoom, offset: state.offset, grid: state.grid, tool: state.tool,
+            selectedAsset: state.selectedAsset, currentLayer: state.currentLayer,
+            xpRequired: state.xpRequired || 0,
+            bgMusicEnabled: state.bgMusicEnabled, bgMusicFile: state.bgMusicFile,
+            spawn: state.spawn, teleport: state.teleport,
+            assets: state.assets.map(a => ({
+                file_name: a.file_name, collision: a.collision, frames: a.frames,
+                dataUrl: Autosave.imageToDataUrl(a.img)
+            })),
+            layers: state.layers.map(l => ({
+                name: l.name, visible: l.visible, data: Array.from(l.data)
+            }))
+        };
+    }
+
+    const scheduleAutosave = Autosave.debounce(() => {
+        Autosave.save(AUTOSAVE_KEY, serializeState());
+    }, 1200);
+
+    async function restoreAutosave() {
+        const saved = await Autosave.load(AUTOSAVE_KEY);
+        if (!saved) return;
+        try {
+            state.width = saved.width ?? state.width;
+            state.height = saved.height ?? state.height;
+            state.tw = saved.tw ?? state.tw;
+            state.th = saved.th ?? state.th;
+            state.zoom = saved.zoom ?? 1;
+            state.offset = saved.offset ?? { x: 0, y: 0 };
+            state.grid = saved.grid ?? true;
+            state.tool = saved.tool ?? 'pencil';
+            state.selectedAsset = saved.selectedAsset ?? -1;
+            state.xpRequired = saved.xpRequired || 0;
+            state.bgMusicEnabled = !!saved.bgMusicEnabled;
+            state.bgMusicFile = saved.bgMusicFile || '';
+            state.spawn = saved.spawn || null;
+            state.teleport = saved.teleport || null;
+
+            state.assets = [];
+            for (const a of (saved.assets || [])) {
+                const img = await Autosave.dataUrlToImage(a.dataUrl);
+                state.assets.push({ file_name: a.file_name, collision: a.collision, frames: a.frames, img });
+            }
+
+            state.layers = (saved.layers || []).map(l => ({
+                name: l.name, visible: l.visible,
+                data: Uint32Array.from(l.data), _w: state.width, _h: state.height
+            }));
+            if (state.layers.length === 0) {
+                state.layers.push({ name: 'Layer 1', visible: true, data: new Uint32Array(state.width * state.height), _w: state.width, _h: state.height });
+            }
+            state.currentLayer = Math.min(saved.currentLayer || 0, state.layers.length - 1);
+
+            document.getElementById('mc-width').value = state.width;
+            document.getElementById('mc-height').value = state.height;
+            document.getElementById('mc-tw').value = state.tw;
+            document.getElementById('mc-th').value = state.th;
+            document.getElementById('mc-grid').checked = state.grid;
+            document.getElementById('mc-xp-required').value = state.xpRequired;
+            document.getElementById('mc-bg-music').checked = state.bgMusicEnabled;
+            document.getElementById('mc-bg-music-file').value = state.bgMusicFile;
+            document.getElementById('mc-bg-music-file').style.display = state.bgMusicEnabled ? 'block' : 'none';
+            document.querySelectorAll('#mc-tools button').forEach(b => b.classList.toggle('active', b.dataset.tool === state.tool));
+
+            resizeCanvas();
+            refreshPalette();
+            renderAssetProps();
+            renderLayersUI();
+            draw();
+        } catch (err) {
+            console.warn('Map Creator: failed to restore autosave', err);
+        }
     }
   
     // Init default map
@@ -497,6 +579,7 @@ function renderMapCreatorTab() {
         refreshPalette();
         renderAssetProps();
         draw();
+        Autosave.save(AUTOSAVE_KEY, serializeState()); // persist the reset immediately, don't wait for the debounce
     };
 
     // Canvas interactions
@@ -785,6 +868,9 @@ function renderMapCreatorTab() {
       if (state.bgMusicEnabled && state.bgMusicFile) out.bgMusic = state.bgMusicFile; 
       return out;
     }
+
+    // Restore any previously autosaved map now that setup is complete.
+    restoreAutosave();
   }
   window.renderMapCreatorTab = renderMapCreatorTab;
 

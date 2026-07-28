@@ -160,6 +160,9 @@ let creatorMapAssets = {};
 let creatorMapImages = {};
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
+let currentFloorIdx = "";      // value of the creator-map-select dropdown
+let currentMapData = null;     // parsed map JSON currently loaded, if any
+let currentCreatorTool = null; // which sub-tool panel (npc/enemy/etc) is open
 
 function normalizeIdFromName(name) {
     return (name || "")
@@ -167,6 +170,95 @@ function normalizeIdFromName(name) {
         .replace(/\s*-\s*/g, "_")
         .replace(/\s+/g, "_")
         .replace(/[^a-z0-9_]/g, "");
+}
+
+// --- Autosave: persists to IndexedDB so work survives a full page reload,
+// not just switching tabs (see autosave.js). Covers the loaded map + its
+// assets, every saved NPC/enemy/trigger/interact tile/sprite/item/skill, the
+// in-progress draft in each of the 7 sub-tools, and which sub-tool was open.
+// Note: `definitions` (the live game data fetched from GitHub on load) is
+// intentionally NOT part of this -- it's always re-fetched fresh, and
+// savedNpcs/savedEnemies/etc already capture whatever was filtered from it
+// plus anything added locally, so nothing is lost by not caching it too. ---
+const CREATOR_AUTOSAVE_KEY = 'floorCreator';
+
+function serializeCreatorState() {
+    return {
+        floorIdx: currentFloorIdx,
+        mapData: currentMapData,
+        mapAssets: creatorMapAssets,   // already {fileName: dataURL} strings
+        mapZoom: creatorMapZoom,
+        mapOffset: creatorMapOffset,
+        currentTool: currentCreatorTool,
+
+        savedNpcs, savedEnemies, savedTriggers, savedInteractTiles,
+        savedWorldSprites, savedItems, savedSkills,
+
+        npcDraft: creatorState.npc,
+        enemyDraft: enemyCreatorState.enemy,
+        triggerDraft: triggerCreatorState.trigger,
+        interactDraft: interactCreatorState.tile,
+        spriteDraft: worldSpriteCreatorState.sprite,
+        itemDraft: itemCreatorState.item,
+        skillDraft: skillCreatorState.skill
+    };
+}
+
+const scheduleCreatorAutosave = Autosave.debounce(() => {
+    Autosave.save(CREATOR_AUTOSAVE_KEY, serializeCreatorState());
+}, 1200);
+
+async function restoreCreatorAutosave() {
+    const saved = await Autosave.load(CREATOR_AUTOSAVE_KEY);
+    if (!saved) return;
+    try {
+        currentFloorIdx = saved.floorIdx || "";
+        const floorSelect = document.getElementById('creator-map-select');
+        if (floorSelect) floorSelect.value = currentFloorIdx;
+
+        savedNpcs = saved.savedNpcs || [];
+        savedEnemies = saved.savedEnemies || [];
+        savedTriggers = saved.savedTriggers || [];
+        savedInteractTiles = saved.savedInteractTiles || [];
+        savedWorldSprites = saved.savedWorldSprites || [];
+        savedItems = saved.savedItems || [];
+        savedSkills = saved.savedSkills || [];
+
+        if (saved.npcDraft) creatorState.npc = saved.npcDraft;
+        if (saved.enemyDraft) enemyCreatorState.enemy = saved.enemyDraft;
+        if (saved.triggerDraft) triggerCreatorState.trigger = saved.triggerDraft;
+        if (saved.interactDraft) interactCreatorState.tile = saved.interactDraft;
+        if (saved.spriteDraft) worldSpriteCreatorState.sprite = saved.spriteDraft;
+        if (saved.itemDraft) itemCreatorState.item = saved.itemDraft;
+        if (saved.skillDraft) skillCreatorState.skill = saved.skillDraft;
+
+        creatorMapZoom = saved.mapZoom ?? 1;
+        creatorMapOffset = saved.mapOffset || { x: 0, y: 0 };
+
+        // showCreatorMap() also rebuilds the tool sidebar (via showToolPanel())
+        // and re-derives creatorMapImages from creatorMapAssets, so reusing it
+        // here gets us map + assets + tool sidebar restoration for free.
+        if (saved.mapData) {
+            showCreatorMap(saved.mapData, saved.mapAssets || {});
+            renderSavedNpcs();
+            renderSavedEnemies();
+            renderSavedTriggers();
+            renderSavedInteractTiles();
+            renderSavedWorldSprites();
+        }
+        renderSavedItems();
+        renderSavedSkills();
+
+        if (saved.currentTool) {
+            currentCreatorTool = saved.currentTool;
+            const sidebar = document.getElementById('creator-tool-sidebar');
+            const btn = sidebar && sidebar.querySelector(`.tool-btn[data-tool="${saved.currentTool}"]`);
+            if (btn) btn.classList.add('active');
+            showToolOptions(saved.currentTool);
+        }
+    } catch (err) {
+        console.warn('Floor Creator: failed to restore autosave', err);
+    }
 }
 
 // Creator Tab Render
@@ -274,9 +366,20 @@ function renderCreatorTab() {
         };
         reader.readAsText(file);
     };
+
+    // Autosave: rather than instrument every one of the dozens of field
+    // handlers across all 7 sub-tools individually (high risk of missing
+    // one in a file this size), listen for any input/change/click within
+    // the whole tab and schedule a debounced save. Cheap and comprehensive.
+    tab.addEventListener('input', scheduleCreatorAutosave);
+    tab.addEventListener('change', scheduleCreatorAutosave);
+    tab.addEventListener('click', scheduleCreatorAutosave);
+
+    restoreCreatorAutosave();
 }
 
 function loadExistingMapAndDefinitions(floorIdx, mapData, loadedAssets) {
+    currentFloorIdx = String(floorIdx);
     // Load all definitions for this map
     savedNpcs = Object.values(definitions.npcs || {}).filter(npc =>
         Array.isArray(npc.spawns) &&
@@ -366,6 +469,7 @@ function promptForAssets(mapData) {
                         loadExistingMapAndDefinitions(Number(floorIdx), mapData, loadedAssets);
                     } else {
                         // New Map: clear save lists and just show the map
+                        currentFloorIdx = "";
                         savedNpcs = [];
                         savedEnemies = [];
                         savedTriggers = [];
@@ -386,6 +490,7 @@ function promptForAssets(mapData) {
                     loadExistingMapAndDefinitions(Number(floorIdx), mapData, {});
                 } else {
                     // New Map: clear save lists and just show the map
+                    currentFloorIdx = "";
                     savedNpcs = [];
                     savedEnemies = [];
                     savedTriggers = [];
@@ -416,6 +521,7 @@ function showToolPanel() {
         btn.onclick = function() {
             sidebar.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            currentCreatorTool = btn.dataset.tool;
             showToolOptions(btn.dataset.tool);
         };
     });
@@ -1040,41 +1146,25 @@ function clearNpcInputs() {
 }
 
 function renderSavedNpcs() {
-    const listDiv = document.getElementById('saved-npcs-list');
-    if (!listDiv) return;
-    if (savedNpcs.length === 0) {
-        listDiv.innerHTML = "<b>No NPCs saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedNpcs.map((npc, idx) => `
-        <div class="saved-npc-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${npc.name || "(Unnamed NPC)"}</span>
-            <button type="button" class="edit-npc-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-npc-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-npc-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            creatorState.npc = JSON.parse(JSON.stringify(savedNpcs[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="npc"]').classList.add('active');
-            showToolOptions("npc");
+    renderSavedList({
+        listElId: 'saved-npcs-list',
+        getItems: () => savedNpcs,
+        rowClass: 'saved-npc-row',
+        editBtnClass: 'edit-npc-btn',
+        deleteBtnClass: 'delete-npc-btn',
+        emptyMessage: 'No NPCs saved yet.',
+        label: npc => npc.name || "(Unnamed NPC)",
+        toolKey: 'npc',
+        setDraft: item => { creatorState.npc = item; },
+        onEdit: () => {
             updateCreatorPreview();
             updateWanderPrompt();
             renderNpcDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-npc-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedNpcs.splice(idx, 1);
-            renderSavedNpcs();
+        },
+        onDelete: () => {
             renderNpcDownloadButtons();
-            renderSavedEnemies();
-            renderEnemyDownloadButtons();
             if (typeof drawMap === "function") drawMap();
-        };
+        }
     });
 }
 
@@ -1303,6 +1393,7 @@ function updateWanderPrompt() {
 
 // Map Engine for Preview Map 
 function showCreatorMap(mapData, loadedAssets = {}) {
+    currentMapData = mapData;
     creatorMapAssets = loadedAssets;
     creatorMapImages = {};
 
@@ -2058,23 +2149,20 @@ function showCreatorMap(mapData, loadedAssets = {}) {
     };
     resizeCanvas();
     showToolPanel();
+    scheduleCreatorAutosave();
 }
 
 function renderNpcDownloadButtons() {
-    const btnDiv = document.getElementById('npc-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `
-        <button id="download-npc-defs" type="button">Download NPC Definitions</button>
-        <button id="download-quest-defs" type="button">Download Quest Definitions</button>
-    `;
-    document.getElementById('download-npc-defs').onclick = () => {
-        const code = savedNpcs.map(npc => getNpcDefinitionCode(npc)).join("\n\n");
-        downloadTextFile("npc_definitions.js", code);
-    };
-    document.getElementById('download-quest-defs').onclick = () => {
-        const code = savedNpcs.filter(npc => npc.hasQuest).map(npc => getQuestDefinitionCode(npc)).join("\n\n");
-        downloadTextFile("quest_definitions.js", code);
-    };
+    renderDownloadButtons('npc-download-buttons', [
+        {
+            id: 'download-npc-defs', label: 'Download NPC Definitions', filename: 'npc_definitions.js',
+            buildCode: () => savedNpcs.map(npc => getNpcDefinitionCode(npc)).join("\n\n")
+        },
+        {
+            id: 'download-quest-defs', label: 'Download Quest Definitions', filename: 'quest_definitions.js',
+            buildCode: () => savedNpcs.filter(npc => npc.hasQuest).map(npc => getQuestDefinitionCode(npc)).join("\n\n")
+        }
+    ]);
 }
 
 function downloadTextFile(filename, text) {
@@ -2083,6 +2171,76 @@ function downloadTextFile(filename, text) {
     link.download = filename;
     link.href = URL.createObjectURL(blob);
     link.click();
+}
+
+// Generic renderer for a "saved X" list panel (saved NPCs, enemies,
+// triggers, interact tiles, world sprites, items, skills all use this same
+// shape: a list of rows with Edit/Delete buttons). Replaces 7 near-identical
+// implementations that had started to drift -- e.g. NPC's delete handler
+// used to also re-render the Enemy list by copy-paste mistake, which this
+// consolidation fixes by construction (each tool only declares its own
+// onEdit/onDelete side effects).
+function renderSavedList(config) {
+    const {
+        listElId, rowClass, editBtnClass, deleteBtnClass, emptyMessage,
+        label, toolKey, setDraft, onEdit, onDelete,
+        getItems // () => current array; a getter (not a captured reference) so
+                 // this always respects the *current* value of the outer
+                 // savedX variable, matching the original code's behavior of
+                 // reading that module-level variable live at click-time.
+    } = config;
+
+    const listDiv = document.getElementById(listElId);
+    if (!listDiv) return;
+
+    const items = getItems();
+    if (!items.length) {
+        listDiv.innerHTML = `<b>${emptyMessage}</b>`;
+        return;
+    }
+
+    listDiv.innerHTML = items.map((item, idx) => `
+        <div class="${rowClass}" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
+            <span style="font-weight:bold;">${label(item)}</span>
+            <button type="button" class="${editBtnClass}" data-idx="${idx}">Edit</button>
+            <button type="button" class="${deleteBtnClass}" data-idx="${idx}">Delete</button>
+        </div>
+    `).join("");
+
+    listDiv.querySelectorAll(`.${editBtnClass}`).forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            setDraft(JSON.parse(JSON.stringify(getItems()[idx])));
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const sideBtn = document.querySelector(`.tool-btn[data-tool="${toolKey}"]`);
+            if (sideBtn) sideBtn.classList.add('active');
+            currentCreatorTool = toolKey; // keep autosave's "which panel is open" in sync
+            showToolOptions(toolKey);
+            if (onEdit) onEdit();
+        };
+    });
+
+    listDiv.querySelectorAll(`.${deleteBtnClass}`).forEach(btn => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.idx);
+            getItems().splice(idx, 1);
+            renderSavedList(config);
+            if (onDelete) onDelete();
+        };
+    });
+}
+
+// Generic renderer for a "download definitions" button panel. Most tools
+// have exactly one button; NPC has two (NPC defs + Quest defs).
+function renderDownloadButtons(containerId, buttons) {
+    const btnDiv = document.getElementById(containerId);
+    if (!btnDiv) return;
+    btnDiv.innerHTML = buttons.map(b => `<button id="${b.id}" type="button">${b.label}</button>`).join('\n        ');
+    buttons.forEach(b => {
+        document.getElementById(b.id).onclick = () => {
+            downloadTextFile(b.filename, b.buildCode());
+        };
+    });
 }
 
 function getNpcDefinitionCode(npc) {
@@ -2350,53 +2508,34 @@ function updateEnemySpawnPrompt() {
 }
 
 function renderSavedEnemies() {
-    const listDiv = document.getElementById('saved-enemies-list');
-    if (!listDiv) return;
-    if (savedEnemies.length === 0) {
-        listDiv.innerHTML = "<b>No enemies saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedEnemies.map((enemy, idx) => `
-        <div class="saved-enemy-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${enemy.name || "(Unnamed Enemy)"}</span>
-            <button type="button" class="edit-enemy-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-enemy-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-enemy-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            enemyCreatorState.enemy = JSON.parse(JSON.stringify(savedEnemies[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="enemy"]').classList.add('active');
-            showToolOptions("enemy");
+    renderSavedList({
+        listElId: 'saved-enemies-list',
+        getItems: () => savedEnemies,
+        rowClass: 'saved-enemy-row',
+        editBtnClass: 'edit-enemy-btn',
+        deleteBtnClass: 'delete-enemy-btn',
+        emptyMessage: 'No enemies saved yet.',
+        label: enemy => enemy.name || "(Unnamed Enemy)",
+        toolKey: 'enemy',
+        setDraft: item => { enemyCreatorState.enemy = item; },
+        onEdit: () => {
             updateEnemyCreatorPreview();
             renderEnemyDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-enemy-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedEnemies.splice(idx, 1);
-            renderSavedNpcs();
-            renderNpcDownloadButtons();
-            renderSavedEnemies();
+        },
+        onDelete: () => {
             renderEnemyDownloadButtons();
             if (typeof drawMap === "function") drawMap();
-        };
+        }
     });
 }
 
 function renderEnemyDownloadButtons() {
-    const btnDiv = document.getElementById('enemy-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `
-        <button id="download-enemy-defs" type="button">Download Enemy Definitions</button>
-    `;
-    document.getElementById('download-enemy-defs').onclick = () => {
-        const code = savedEnemies.map(enemy => getEnemyDefinitionCode(enemy)).join("\n\n");
-        downloadTextFile("enemy_definitions.js", code);
-    };
+    renderDownloadButtons('enemy-download-buttons', [
+        {
+            id: 'download-enemy-defs', label: 'Download Enemy Definitions', filename: 'enemy_definitions.js',
+            buildCode: () => savedEnemies.map(enemy => getEnemyDefinitionCode(enemy)).join("\n\n")
+        }
+    ]);
 }
 
 function getEnemyDefinitionCode(enemy) {
@@ -2557,51 +2696,34 @@ function attachTriggerRewardListeners() {
 }
 
 function renderSavedTriggers() {
-    const listDiv = document.getElementById('saved-triggers-list');
-    if (!listDiv) return;
-    if (savedTriggers.length === 0) {
-        listDiv.innerHTML = "<b>No trigger tiles saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedTriggers.map((trig, idx) => `
-        <div class="saved-trigger-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${trig.id || "(Unnamed Trigger)"}</span>
-            <button type="button" class="edit-trigger-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-trigger-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-trigger-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            triggerCreatorState.trigger = JSON.parse(JSON.stringify(savedTriggers[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="trigger"]').classList.add('active');
-            showToolOptions("trigger");
+    renderSavedList({
+        listElId: 'saved-triggers-list',
+        getItems: () => savedTriggers,
+        rowClass: 'saved-trigger-row',
+        editBtnClass: 'edit-trigger-btn',
+        deleteBtnClass: 'delete-trigger-btn',
+        emptyMessage: 'No trigger tiles saved yet.',
+        label: trig => trig.id || "(Unnamed Trigger)",
+        toolKey: 'trigger',
+        setDraft: item => { triggerCreatorState.trigger = item; },
+        onEdit: () => {
             updateTriggerCreatorPreview();
             renderTriggerDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-trigger-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedTriggers.splice(idx, 1);
-            renderSavedTriggers();
+        },
+        onDelete: () => {
             renderTriggerDownloadButtons();
             if (typeof drawMap === "function") drawMap();
-        };
+        }
     });
 }
 
 function renderTriggerDownloadButtons() {
-    const btnDiv = document.getElementById('trigger-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `
-        <button id="download-trigger-defs" type="button">Download Trigger Tile Definitions</button>
-    `;
-    document.getElementById('download-trigger-defs').onclick = () => {
-        const code = savedTriggers.map(trig => getTriggerDefinitionCode(trig)).join("\n\n");
-        downloadTextFile("trigger_definitions.js", code);
-    };
+    renderDownloadButtons('trigger-download-buttons', [
+        {
+            id: 'download-trigger-defs', label: 'Download Trigger Tile Definitions', filename: 'trigger_definitions.js',
+            buildCode: () => savedTriggers.map(trig => getTriggerDefinitionCode(trig)).join("\n\n")
+        }
+    ]);
 }
 
 function getTriggerDefinitionCode(trig) {
@@ -2773,51 +2895,34 @@ function attachInteractRewardListeners() {
 }
 
 function renderSavedInteractTiles() {
-    const listDiv = document.getElementById('saved-interacts-list');
-    if (!listDiv) return;
-    if (savedInteractTiles.length === 0) {
-        listDiv.innerHTML = "<b>No interactable tiles saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedInteractTiles.map((it, idx) => `
-        <div class="saved-inter-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${it.id || "(Unnamed Interactable)"}</span>
-            <button type="button" class="edit-inter-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-inter-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-inter-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            interactCreatorState.tile = JSON.parse(JSON.stringify(savedInteractTiles[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="interact"]').classList.add('active');
-            showToolOptions("interact");
+    renderSavedList({
+        listElId: 'saved-interacts-list',
+        getItems: () => savedInteractTiles,
+        rowClass: 'saved-inter-row',
+        editBtnClass: 'edit-inter-btn',
+        deleteBtnClass: 'delete-inter-btn',
+        emptyMessage: 'No interactable tiles saved yet.',
+        label: it => it.id || "(Unnamed Interactable)",
+        toolKey: 'interact',
+        setDraft: item => { interactCreatorState.tile = item; },
+        onEdit: () => {
             updateInteractCreatorPreview();
             renderInteractDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-inter-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedInteractTiles.splice(idx, 1);
-            renderSavedInteractTiles();
+        },
+        onDelete: () => {
             renderInteractDownloadButtons();
             if (typeof drawMap === "function") drawMap();
-        };
+        }
     });
 }
 
 function renderInteractDownloadButtons() {
-    const btnDiv = document.getElementById('interact-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `
-        <button id="download-interact-defs" type="button">Download Interactable Tile Definitions</button>
-    `;
-    document.getElementById('download-interact-defs').onclick = () => {
-        const code = savedInteractTiles.map(t => getInteractDefinitionCode(t)).join("\n\n");
-        downloadTextFile("interact_definitions.js", code);
-    };
+    renderDownloadButtons('interact-download-buttons', [
+        {
+            id: 'download-interact-defs', label: 'Download Interactable Tile Definitions', filename: 'interact_definitions.js',
+            buildCode: () => savedInteractTiles.map(t => getInteractDefinitionCode(t)).join("\n\n")
+        }
+    ]);
 }
 
 function getInteractDefinitionCode(t) {
@@ -3022,51 +3127,34 @@ function clearWorldSpriteInputs() {
 }
 
 function renderSavedWorldSprites() {
-    const listDiv = document.getElementById('saved-sprites-list');
-    if (!listDiv) return;
-    if (savedWorldSprites.length === 0) {
-        listDiv.innerHTML = "<b>No world sprites saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedWorldSprites.map((ws, idx) => `
-        <div class="saved-ws-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${ws.id || "(Unnamed World Sprite)"}</span>
-            <button type="button" class="edit-ws-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-ws-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-ws-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            worldSpriteCreatorState.sprite = JSON.parse(JSON.stringify(savedWorldSprites[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="sprite"]').classList.add('active');
-            showToolOptions("sprite");
+    renderSavedList({
+        listElId: 'saved-sprites-list',
+        getItems: () => savedWorldSprites,
+        rowClass: 'saved-ws-row',
+        editBtnClass: 'edit-ws-btn',
+        deleteBtnClass: 'delete-ws-btn',
+        emptyMessage: 'No world sprites saved yet.',
+        label: ws => ws.id || "(Unnamed World Sprite)",
+        toolKey: 'sprite',
+        setDraft: item => { worldSpriteCreatorState.sprite = item; },
+        onEdit: () => {
             updateWorldSpritePreview();
             renderSpriteDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-ws-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedWorldSprites.splice(idx, 1);
-            renderSavedWorldSprites();
+        },
+        onDelete: () => {
             renderSpriteDownloadButtons();
             if (typeof drawMap === "function") drawMap();
-        };
+        }
     });
 }
 
 function renderSpriteDownloadButtons() {
-    const btnDiv = document.getElementById('sprite-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `
-        <button id="download-ws-defs" type="button">Download World Sprite Definitions</button>
-    `;
-    document.getElementById('download-ws-defs').onclick = () => {
-        const code = savedWorldSprites.map(ws => getWorldSpriteDefinitionCode(ws)).join("\n\n");
-        downloadTextFile("world_sprite_definitions.js", code);
-    };
+    renderDownloadButtons('sprite-download-buttons', [
+        {
+            id: 'download-ws-defs', label: 'Download World Sprite Definitions', filename: 'world_sprite_definitions.js',
+            buildCode: () => savedWorldSprites.map(ws => getWorldSpriteDefinitionCode(ws)).join("\n\n")
+        }
+    ]);
 }
 
 function getWorldSpriteDefinitionCode(ws) {
@@ -3177,48 +3265,33 @@ function clearItemInputs() {
 }
 
 function renderSavedItems() {
-    const listDiv = document.getElementById('saved-items-list');
-    if (!listDiv) return;
-    if (!savedItems.length) {
-        listDiv.innerHTML = "<b>No items saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedItems.map((it, idx) => `
-        <div class="saved-item-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${it.name || "(Unnamed Item)"} <span style="opacity:0.7;">(${it.id})</span></span>
-            <button type="button" class="edit-item-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-item-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-item-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            itemCreatorState.item = JSON.parse(JSON.stringify(savedItems[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="item"]').classList.add('active');
-            showToolOptions("item");
+    renderSavedList({
+        listElId: 'saved-items-list',
+        getItems: () => savedItems,
+        rowClass: 'saved-item-row',
+        editBtnClass: 'edit-item-btn',
+        deleteBtnClass: 'delete-item-btn',
+        emptyMessage: 'No items saved yet.',
+        label: it => `${it.name || "(Unnamed Item)"} <span style="opacity:0.7;">(${it.id})</span>`,
+        toolKey: 'item',
+        setDraft: item => { itemCreatorState.item = item; },
+        onEdit: () => {
             updateItemPreview();
             renderItemDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-item-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedItems.splice(idx, 1);
-            renderSavedItems();
+        },
+        onDelete: () => {
             renderItemDownloadButtons();
-        };
+        }
     });
 }
 
 function renderItemDownloadButtons() {
-    const btnDiv = document.getElementById('item-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `<button id="download-item-defs" type="button">Download Item Definitions</button>`;
-    document.getElementById('download-item-defs').onclick = () => {
-        const code = savedItems.map(it => getItemDefinitionCode(it)).join("\n\n");
-        downloadTextFile("item_definitions.js", code);
-    };
+    renderDownloadButtons('item-download-buttons', [
+        {
+            id: 'download-item-defs', label: 'Download Item Definitions', filename: 'item_definitions.js',
+            buildCode: () => savedItems.map(it => getItemDefinitionCode(it)).join("\n\n")
+        }
+    ]);
 }
 
 function renderSkillStatsList(kind) { // kind: 'buffs' | 'drawbacks'
@@ -3350,46 +3423,31 @@ function clearSkillInputs() {
 }
 
 function renderSavedSkills() {
-    const listDiv = document.getElementById('saved-skills-list');
-    if (!listDiv) return;
-    if (!savedSkills.length) {
-        listDiv.innerHTML = "<b>No skills saved yet.</b>";
-        return;
-    }
-    listDiv.innerHTML = savedSkills.map((sk, idx) => `
-        <div class="saved-skill-row" style="background:#232634; border-radius:6px; padding:8px; margin-bottom:8px; display:flex; align-items:center; gap:12px;">
-            <span style="font-weight:bold;">${sk.name || "(Unnamed Skill)"} <span style="opacity:0.7;">(${sk.id})</span></span>
-            <button type="button" class="edit-skill-btn" data-idx="${idx}">Edit</button>
-            <button type="button" class="delete-skill-btn" data-idx="${idx}">Delete</button>
-        </div>
-    `).join("");
-    listDiv.querySelectorAll('.edit-skill-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            skillCreatorState.skill = JSON.parse(JSON.stringify(savedSkills[idx]));
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            document.querySelector('.tool-btn[data-tool="skill"]').classList.add('active');
-            showToolOptions("skill");
+    renderSavedList({
+        listElId: 'saved-skills-list',
+        getItems: () => savedSkills,
+        rowClass: 'saved-skill-row',
+        editBtnClass: 'edit-skill-btn',
+        deleteBtnClass: 'delete-skill-btn',
+        emptyMessage: 'No skills saved yet.',
+        label: sk => `${sk.name || "(Unnamed Skill)"} <span style="opacity:0.7;">(${sk.id})</span>`,
+        toolKey: 'skill',
+        setDraft: item => { skillCreatorState.skill = item; },
+        onEdit: () => {
             updateSkillPreview();
             renderSkillDownloadButtons();
-        };
-    });
-    listDiv.querySelectorAll('.delete-skill-btn').forEach(btn => {
-        btn.onclick = () => {
-            const idx = Number(btn.dataset.idx);
-            savedSkills.splice(idx, 1);
-            renderSavedSkills();
+        },
+        onDelete: () => {
             renderSkillDownloadButtons();
-        };
+        }
     });
 }
 
 function renderSkillDownloadButtons() {
-    const btnDiv = document.getElementById('skill-download-buttons');
-    if (!btnDiv) return;
-    btnDiv.innerHTML = `<button id="download-skill-defs" type="button">Download Skill Definitions</button>`;
-    document.getElementById('download-skill-defs').onclick = () => {
-        const code = savedSkills.map(sk => getSkillDefinitionCode(sk)).join("\n\n");
-        downloadTextFile("skill_definitions.js", code);
-    };
+    renderDownloadButtons('skill-download-buttons', [
+        {
+            id: 'download-skill-defs', label: 'Download Skill Definitions', filename: 'skill_definitions.js',
+            buildCode: () => savedSkills.map(sk => getSkillDefinitionCode(sk)).join("\n\n")
+        }
+    ]);
 }

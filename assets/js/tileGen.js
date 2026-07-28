@@ -408,6 +408,68 @@ function setupTileMaker() {
         canvas.height = opts.size;
         generateTile(opts);
         updateZoom();
+        scheduleAutosave();
+    }
+
+    // --- Autosave: persists to IndexedDB so work survives a full page
+    // reload, not just switching tabs (see autosave.js). The generator is a
+    // deterministic function of its settings + seed, so we only need to
+    // persist the control values and palettes, not the image itself. ---
+    const AUTOSAVE_KEY = 'tileGenerator';
+
+    function serializeState() {
+        return {
+            workingPalettes: workingPalettes.map(p => [...p]),
+            customPalette: [...customPalette],
+            currentPaletteIndex,
+            size: document.getElementById('tile-maker-size').value,
+            symmetry: document.getElementById('tile-maker-symmetry').value,
+            pattern: document.getElementById('tile-maker-pattern').value,
+            density: document.getElementById('tile-maker-density').value,
+            transparency: document.getElementById('tile-maker-transparency').checked,
+            border: document.getElementById('tile-maker-border').checked,
+            seed: document.getElementById('tile-maker-seed').value,
+            definition: document.getElementById('tile-maker-definition').value,
+            clarity: document.getElementById('tile-maker-clarity').value,
+            zoom: document.getElementById('tile-maker-zoom').value
+        };
+    }
+
+    const scheduleAutosave = Autosave.debounce(() => {
+        Autosave.save(AUTOSAVE_KEY, serializeState());
+    }, 1200);
+
+    async function restoreAutosave() {
+        const saved = await Autosave.load(AUTOSAVE_KEY);
+        if (!saved) return;
+        try {
+            if (saved.workingPalettes) workingPalettes = saved.workingPalettes.map(p => [...p]);
+            if (saved.customPalette) customPalette = [...saved.customPalette];
+            currentPaletteIndex = saved.currentPaletteIndex ?? 0;
+
+            paletteSelect.value = currentPaletteIndex;
+            document.getElementById('tile-maker-size').value = saved.size ?? 32;
+            document.getElementById('tile-maker-symmetry').value = saved.symmetry ?? 'none';
+            document.getElementById('tile-maker-pattern').value = saved.pattern ?? 'random';
+            document.getElementById('tile-maker-density').value = saved.density ?? 0.5;
+            document.getElementById('tile-maker-transparency').checked = !!saved.transparency;
+            document.getElementById('tile-maker-border').checked = !!saved.border;
+            document.getElementById('tile-maker-seed').value = saved.seed ?? Math.floor(Math.random() * 1e9);
+            document.getElementById('tile-maker-definition').value = saved.definition ?? 4;
+            document.getElementById('tile-maker-definitionValue').textContent = saved.definition ?? 4;
+            document.getElementById('tile-maker-clarity').value = saved.clarity ?? 0;
+            document.getElementById('tile-maker-clarityValue').textContent = saved.clarity ?? 0;
+            document.getElementById('tile-maker-zoom').value = saved.zoom ?? 8;
+
+            updatePaletteSwatches();
+            updateDensityValue();
+            initialGenerate();
+            if (document.getElementById('tile-maker-transparency').checked) applyTransparency();
+            if (document.getElementById('tile-maker-border').checked) applyBorder();
+            updateZoom();
+        } catch (err) {
+            console.warn('Tile Generator: failed to restore autosave', err);
+        }
     }
 
     // ---- Event Listeners ----
@@ -423,6 +485,7 @@ function setupTileMaker() {
             ctx.putImageData(lastImageData, 0, 0);
             updateZoom();
         }
+        scheduleAutosave();
     };
     document.getElementById('tile-maker-border').onchange = function() {
         if (this.checked) {
@@ -431,6 +494,7 @@ function setupTileMaker() {
             ctx.putImageData(lastImageData, 0, 0);
             updateZoom();
         }
+        scheduleAutosave();
     };
     document.getElementById('tile-maker-seed').oninput = initialGenerate;
     document.getElementById('tile-maker-zoom').oninput = updateZoom;
@@ -460,4 +524,7 @@ function setupTileMaker() {
     updateDensityValue();
     initialGenerate();
     updateZoom();
+
+    // Restore any previously autosaved settings now that setup is complete.
+    restoreAutosave();
 }
