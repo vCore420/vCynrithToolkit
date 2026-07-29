@@ -188,6 +188,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabId === 'creator-tab') renderCreatorTab();
         if (tabId === 'tile-maker-tab') renderTileMakerTab();
         if (tabId === 'tile-editor-tab') renderTileEditorTab();
+        if (tabId === 'sprite-sheet-tab') renderSpriteSheetTab();
         if (tabId === 'map-creator-tab') renderMapCreatorTab();
     };
 });

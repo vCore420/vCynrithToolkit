@@ -132,7 +132,21 @@ const itemCreatorState = {
         stackable: true,
         useable: false,
         removeable: true,
-        sound: { enabled: false, file: "" } // base only; .mp3 assumed
+        sound: { enabled: false, file: "" }, // base only; .mp3 assumed
+        homePlaceable: false,
+        homeDef: {
+            spriteSheetOverride: "", // full path; blank reuses this item's own `image` field
+            imageW: 64,
+            imageH: 64,
+            rows: 1,
+            cols: 1,
+            animSpeed: 0,
+            zIndex: 0,
+            collision: true,
+            canStackOnPlaced: false,
+            footprintW: 1,
+            footprintH: 1
+        }
     }
 };
 let savedItems = [];
@@ -153,6 +167,18 @@ const skillCreatorState = {
     }
 };
 let savedSkills = [];
+
+// Traders aren't tied to a floor in the actual data (TRADER_DEFINITIONS is a
+// flat namespace, grouped by floor only via source comments), so -- like
+// items/skills -- savedTraders is NOT reset when switching floors/maps.
+const traderCreatorState = {
+    trader: {
+        id: "",   // e.g. "trader11" -- unique string ID referenced by an NPC's "trader" field
+        buy: [],  // [{ id: itemId, price }] -- items the trader sells to the player
+        sell: []  // [{ id: itemId, price }] -- items the trader buys from the player
+    }
+};
+let savedTraders = [];
 
 let creatorMapZoom = 1;
 let creatorMapOffset = { x: 0, y: 0 };
@@ -192,7 +218,7 @@ function serializeCreatorState() {
         currentTool: currentCreatorTool,
 
         savedNpcs, savedEnemies, savedTriggers, savedInteractTiles,
-        savedWorldSprites, savedItems, savedSkills,
+        savedWorldSprites, savedItems, savedSkills, savedTraders,
 
         npcDraft: creatorState.npc,
         enemyDraft: enemyCreatorState.enemy,
@@ -200,7 +226,8 @@ function serializeCreatorState() {
         interactDraft: interactCreatorState.tile,
         spriteDraft: worldSpriteCreatorState.sprite,
         itemDraft: itemCreatorState.item,
-        skillDraft: skillCreatorState.skill
+        skillDraft: skillCreatorState.skill,
+        traderDraft: traderCreatorState.trader
     };
 }
 
@@ -223,6 +250,7 @@ async function restoreCreatorAutosave() {
         savedWorldSprites = saved.savedWorldSprites || [];
         savedItems = saved.savedItems || [];
         savedSkills = saved.savedSkills || [];
+        savedTraders = saved.savedTraders || [];
 
         if (saved.npcDraft) creatorState.npc = saved.npcDraft;
         if (saved.enemyDraft) enemyCreatorState.enemy = saved.enemyDraft;
@@ -231,6 +259,7 @@ async function restoreCreatorAutosave() {
         if (saved.spriteDraft) worldSpriteCreatorState.sprite = saved.spriteDraft;
         if (saved.itemDraft) itemCreatorState.item = saved.itemDraft;
         if (saved.skillDraft) skillCreatorState.skill = saved.skillDraft;
+        if (saved.traderDraft) traderCreatorState.trader = saved.traderDraft;
 
         creatorMapZoom = saved.mapZoom ?? 1;
         creatorMapOffset = saved.mapOffset || { x: 0, y: 0 };
@@ -248,6 +277,7 @@ async function restoreCreatorAutosave() {
         }
         renderSavedItems();
         renderSavedSkills();
+        renderSavedTraders();
 
         if (saved.currentTool) {
             currentCreatorTool = saved.currentTool;
@@ -316,6 +346,8 @@ function renderCreatorTab() {
         <div id="item-download-buttons" style="margin-top:16px;"></div>
         <div id="saved-skills-list" style="margin-top:24px;"></div>
         <div id="skill-download-buttons" style="margin-top:16px;"></div>
+        <div id="saved-traders-list" style="margin-top:24px;"></div>
+        <div id="trader-download-buttons" style="margin-top:16px;"></div>
     `;
 
     document.getElementById('creator-map-select').onchange = function(e) {
@@ -515,6 +547,7 @@ function showToolPanel() {
             <button class="tool-btn" data-tool="sprite">World Sprite Creator</button>
             <button class="tool-btn" data-tool="item">Item Creator</button>
             <button class="tool-btn" data-tool="skill">Skill Creator</button>
+            <button class="tool-btn" data-tool="trader">Trader Creator</button>
         </div>
     `;
     sidebar.querySelectorAll('.tool-btn').forEach(btn => {
@@ -908,6 +941,17 @@ function showToolOptions(tool) {
         updateWorldSpritePreview();
     } else if (tool === 'item') {
         const it = itemCreatorState.item;
+        // Defensive backfill: items saved/autosaved before homePlaceable/homeDef
+        // existed (or even before `sound` existed) would otherwise crash here.
+        if (!it.sound) it.sound = { enabled: false, file: "" };
+        if (typeof it.homePlaceable !== 'boolean') it.homePlaceable = false;
+        if (!it.homeDef) {
+            it.homeDef = {
+                spriteSheetOverride: "", imageW: 64, imageH: 64, rows: 1, cols: 1,
+                animSpeed: 0, zIndex: 0, collision: true, canStackOnPlaced: false,
+                footprintW: 1, footprintH: 1
+            };
+        }
         optionsDiv.innerHTML = `
             <h3>Item Creator</h3>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:620px;">
@@ -946,6 +990,35 @@ function showToolOptions(tool) {
                         <label>File Name (base):<br>
                             <input type="text" id="item-sound-file" value="${it.sound.file}" style="width:200px;" placeholder="e.g. health" />
                         </label>
+                    </div>
+                </fieldset>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px;">
+                    <legend>Home Plot</legend>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="item-home-placeable" ${it.homePlaceable?"checked":""}/> Home Placeable
+                    </label>
+                    <div id="item-homedef-fields" style="display:${it.homePlaceable ? 'flex' : 'none'}; flex-direction:column; gap:8px; margin-top:8px;">
+                        <label>Home Sprite Sheet Override (full path, leave blank to reuse this item's Image above):<br>
+                            <input type="text" id="item-home-sprite" value="${it.homeDef.spriteSheetOverride}" style="width:100%;" placeholder="e.g. assets/img/tile/chair_1.png" />
+                        </label>
+                        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                            <label>Image W:<br><input type="number" id="item-home-w" value="${it.homeDef.imageW}" min="1" style="width:80px;"></label>
+                            <label>Image H:<br><input type="number" id="item-home-h" value="${it.homeDef.imageH}" min="1" style="width:80px;"></label>
+                            <label>Rows:<br><input type="number" id="item-home-rows" value="${it.homeDef.rows}" min="1" style="width:70px;"></label>
+                            <label>Cols:<br><input type="number" id="item-home-cols" value="${it.homeDef.cols}" min="1" style="width:70px;"></label>
+                            <label>Anim Speed:<br><input type="number" id="item-home-animspeed" value="${it.homeDef.animSpeed}" min="0" style="width:80px;"></label>
+                            <label>Z-Index:<br><input type="number" id="item-home-zindex" value="${it.homeDef.zIndex}" style="width:70px;"></label>
+                            <label>Footprint W:<br><input type="number" id="item-home-footprint-w" value="${it.homeDef.footprintW}" min="1" style="width:80px;"></label>
+                            <label>Footprint H:<br><input type="number" id="item-home-footprint-h" value="${it.homeDef.footprintH}" min="1" style="width:80px;"></label>
+                        </div>
+                        <div style="display:flex; gap:16px;">
+                            <label style="display:flex; gap:8px; align-items:center;">
+                                <input type="checkbox" id="item-home-collision" ${it.homeDef.collision?"checked":""}/> Collision
+                            </label>
+                            <label style="display:flex; gap:8px; align-items:center;">
+                                <input type="checkbox" id="item-home-stack" ${it.homeDef.canStackOnPlaced?"checked":""}/> Can Stack On Placed
+                            </label>
+                        </div>
                     </div>
                 </fieldset>
                 <button id="confirm-item-btn" style="margin-top:16px;">Confirm Item</button>
@@ -1007,6 +1080,34 @@ function showToolOptions(tool) {
         renderSkillStatsList('drawbacks');
         attachSkillCreatorListeners();
         updateSkillPreview();
+    } else if (tool === 'trader') {
+        const t = traderCreatorState.trader;
+        optionsDiv.innerHTML = `
+            <h3>Trader Creator</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; max-width:620px;">
+                <label>Trader ID:<br>
+                    <input type="text" id="trader-id" value="${t.id}" style="width:200px;" placeholder="e.g. trader11" />
+                </label>
+                <div style="color:#9aa4b2; font-size:12px;">Unique ID, referenced by an NPC's "trader" field.</div>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px;">
+                    <legend>Sells To Player (buy)</legend>
+                    <div id="trader-buy-list" style="margin-bottom:8px;"></div>
+                    <button id="add-trader-buy-btn" type="button">Add Item</button>
+                </fieldset>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px;">
+                    <legend>Buys From Player (sell)</legend>
+                    <div id="trader-sell-list" style="margin-bottom:8px;"></div>
+                    <button id="add-trader-sell-btn" type="button">Add Item</button>
+                </fieldset>
+                <button id="confirm-trader-btn" style="margin-top:16px;">Confirm Trader</button>
+                <h4>Trader Definition Preview</h4>
+                <pre id="trader-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
+            </div>
+        `;
+        renderTraderList('buy');
+        renderTraderList('sell');
+        attachTraderCreatorListeners();
+        updateTraderPreview();
     } else {
         optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
             <div>Tool options and inputs will appear here.</div>`;
@@ -3205,6 +3306,25 @@ function attachItemCreatorListeners() {
     sndEn.onchange = e => { it.sound.enabled = e.target.checked; updateItemPreview(); };
     sndFile.oninput = e => { it.sound.file = e.target.value.trim(); updateItemPreview(); };
 
+    const homeEn = document.getElementById('item-home-placeable');
+    const homeFieldsEl = document.getElementById('item-homedef-fields');
+    homeEn.onchange = e => {
+        it.homePlaceable = e.target.checked;
+        homeFieldsEl.style.display = it.homePlaceable ? 'flex' : 'none';
+        updateItemPreview();
+    };
+    document.getElementById('item-home-sprite').oninput = e => { it.homeDef.spriteSheetOverride = e.target.value.trim(); updateItemPreview(); };
+    document.getElementById('item-home-w').oninput = e => { it.homeDef.imageW = parseInt(e.target.value, 10) || 0; updateItemPreview(); };
+    document.getElementById('item-home-h').oninput = e => { it.homeDef.imageH = parseInt(e.target.value, 10) || 0; updateItemPreview(); };
+    document.getElementById('item-home-rows').oninput = e => { it.homeDef.rows = parseInt(e.target.value, 10) || 1; updateItemPreview(); };
+    document.getElementById('item-home-cols').oninput = e => { it.homeDef.cols = parseInt(e.target.value, 10) || 1; updateItemPreview(); };
+    document.getElementById('item-home-animspeed').oninput = e => { it.homeDef.animSpeed = parseInt(e.target.value, 10) || 0; updateItemPreview(); };
+    document.getElementById('item-home-zindex').oninput = e => { it.homeDef.zIndex = parseInt(e.target.value, 10) || 0; updateItemPreview(); };
+    document.getElementById('item-home-footprint-w').oninput = e => { it.homeDef.footprintW = parseInt(e.target.value, 10) || 1; updateItemPreview(); };
+    document.getElementById('item-home-footprint-h').oninput = e => { it.homeDef.footprintH = parseInt(e.target.value, 10) || 1; updateItemPreview(); };
+    document.getElementById('item-home-collision').onchange = e => { it.homeDef.collision = e.target.checked; updateItemPreview(); };
+    document.getElementById('item-home-stack').onchange = e => { it.homeDef.canStackOnPlaced = e.target.checked; updateItemPreview(); };
+
     document.getElementById('confirm-item-btn').onclick = () => {
         const copy = JSON.parse(JSON.stringify(itemCreatorState.item));
         savedItems.push(copy);
@@ -3215,20 +3335,44 @@ function attachItemCreatorListeners() {
     };
 }
 
+// Shared by updateItemPreview() and getItemDefinitionCode() so the homePlaceable/homeDef
+// block is generated identically in both places, just at different indent depths.
+function buildHomeDefCode(it, indent, defaultImagePath) {
+    if (!it.homePlaceable) return "";
+    const spriteSheet = it.homeDef.spriteSheetOverride || defaultImagePath;
+    return `,
+${indent}homePlaceable: true,
+${indent}homeDef: {
+${indent}    spriteSheet: "${spriteSheet}",
+${indent}    imageW: ${it.homeDef.imageW},
+${indent}    imageH: ${it.homeDef.imageH},
+${indent}    rows: ${it.homeDef.rows},
+${indent}    cols: ${it.homeDef.cols},
+${indent}    animSpeed: ${it.homeDef.animSpeed},
+${indent}    zIndex: ${it.homeDef.zIndex},
+${indent}    collision: ${!!it.homeDef.collision},
+${indent}    canStackOnPlaced: ${!!it.homeDef.canStackOnPlaced},
+${indent}    footprintW: ${it.homeDef.footprintW},
+${indent}    footprintH: ${it.homeDef.footprintH}
+${indent}}`;
+}
+
 function updateItemPreview() {
     const it = itemCreatorState.item;
     const imageBase = it.imageName || it.id;
+    const imagePath = `assets/img/items/${imageBase}.png`;
     const soundStr = (it.sound.enabled && it.sound.file) ? `,\n  sound: '${it.sound.file}.mp3'` : "";
+    const homeStr = buildHomeDefCode(it, "  ", imagePath);
     const preview =
 `{
   id: "${it.id}",
   name: "${it.name}",
   description: "${(it.description || "").replace(/"/g, '\\"')}",
-  image: "assets/img/items/${imageBase}.png",
+  image: "${imagePath}",
   rarity: "${it.rarity}",
   stackable: ${!!it.stackable},
   useable: ${!!it.useable},
-  removeable: ${!!it.removeable}${soundStr}
+  removeable: ${!!it.removeable}${soundStr}${homeStr}
 }`;
     const el = document.getElementById('item-def-preview');
     if (el) el.textContent = preview;
@@ -3236,16 +3380,18 @@ function updateItemPreview() {
 
 function getItemDefinitionCode(it) {
     const imageBase = it.imageName || it.id;
+    const imagePath = `assets/img/items/${imageBase}.png`;
     const soundStr = (it.sound && it.sound.enabled && it.sound.file) ? `,\n    sound: '${it.sound.file}.mp3'` : "";
+    const homeStr = buildHomeDefCode(it, "    ", imagePath);
     return `${it.id}: {
     id: "${it.id}",
     name: "${it.name}",
     description: "${(it.description || "").replace(/"/g, '\\"')}",
-    image: "assets/img/items/${imageBase}.png",
+    image: "${imagePath}",
     rarity: "${it.rarity}",
     stackable: ${!!it.stackable},
     useable: ${!!it.useable},
-    removeable: ${!!it.removeable}${soundStr}
+    removeable: ${!!it.removeable}${soundStr}${homeStr}
 },`;
 }
 
@@ -3259,7 +3405,21 @@ function clearItemInputs() {
         stackable: true,
         useable: false,
         removeable: true,
-        sound: { enabled: false, file: "" }
+        sound: { enabled: false, file: "" },
+        homePlaceable: false,
+        homeDef: {
+            spriteSheetOverride: "",
+            imageW: 64,
+            imageH: 64,
+            rows: 1,
+            cols: 1,
+            animSpeed: 0,
+            zIndex: 0,
+            collision: true,
+            canStackOnPlaced: false,
+            footprintW: 1,
+            footprintH: 1
+        }
     };
     showToolOptions("item");
 }
@@ -3420,6 +3580,175 @@ function clearSkillInputs() {
         drawbacks: []
     };
     showToolOptions("skill");
+}
+
+// Combines the live item catalog (fetched from GitHub into `definitions.items`)
+// with any items created locally this session (`savedItems`), so the Trader
+// Creator's item pickers cover both without needing item IDs typed by hand.
+function getKnownItemOptions() {
+    const map = {};
+    Object.values(definitions.items || {}).forEach(it => { if (it && it.id) map[it.id] = it.name || it.id; });
+    savedItems.forEach(it => { if (it && it.id) map[it.id] = it.name || it.id; });
+    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+// Suggests the next free "traderN" id by looking at both the live trader
+// catalog and anything saved locally this session -- just a convenience
+// starting point, the ID field stays fully editable.
+function suggestNextTraderId() {
+    const ids = [
+        ...Object.keys(definitions.traders || {}),
+        ...savedTraders.map(t => t.id)
+    ];
+    let maxN = 0;
+    ids.forEach(id => {
+        const m = /^trader(\d+)$/.exec(id || "");
+        if (m) maxN = Math.max(maxN, Number(m[1]));
+    });
+    return `trader${maxN + 1}`;
+}
+
+// Renders one of the two trader item lists (kind: 'buy' | 'sell'). Modeled
+// on renderSkillStatsList's add/remove-row pattern, but with a <select> of
+// known item IDs instead of a free-text key, so entries are far less likely
+// to reference an item that doesn't actually exist.
+function renderTraderList(kind) {
+    const t = traderCreatorState.trader;
+    const listDiv = document.getElementById(kind === 'buy' ? 'trader-buy-list' : 'trader-sell-list');
+    if (!listDiv) return;
+    const arr = t[kind] || [];
+    const itemOptions = getKnownItemOptions();
+
+    listDiv.innerHTML = arr.map((row, i) => {
+        const knownIds = itemOptions.map(([id]) => id);
+        const extraOption = (row.id && !knownIds.includes(row.id))
+            ? `<option value="${row.id}" selected>${row.id} (not in catalog)</option>` : "";
+        return `
+        <div class="trader-${kind}-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+            <select class="trader-${kind}-id" style="width:280px;">
+                <option value="">-- select item --</option>
+                ${itemOptions.map(([id, name]) => `<option value="${id}" ${row.id === id ? "selected" : ""}>${id}${name && name !== id ? " — " + name : ""}</option>`).join("")}
+                ${extraOption}
+            </select>
+            <input type="number" class="trader-${kind}-price" value="${row.price ?? 0}" min="0" step="1" style="width:100px;" placeholder="price">
+            <button type="button" class="remove-trader-${kind}-btn">Remove</button>
+        </div>`;
+    }).join("");
+
+    const sync = () => {
+        const newArr = [];
+        listDiv.querySelectorAll(`.trader-${kind}-row`).forEach(row => {
+            const id = row.querySelector(`.trader-${kind}-id`).value;
+            const price = Number(row.querySelector(`.trader-${kind}-price`).value) || 0;
+            if (id) newArr.push({ id, price });
+        });
+        t[kind] = newArr;
+        updateTraderPreview();
+    };
+    listDiv.querySelectorAll(`.trader-${kind}-id`).forEach(sel => sel.onchange = sync);
+    listDiv.querySelectorAll(`.trader-${kind}-price`).forEach(inp => inp.oninput = sync);
+    listDiv.querySelectorAll(`.remove-trader-${kind}-btn`).forEach(btn => {
+        btn.onclick = () => { btn.parentElement.remove(); sync(); };
+    });
+
+    const addBtn = document.getElementById(kind === 'buy' ? 'add-trader-buy-btn' : 'add-trader-sell-btn');
+    if (addBtn) {
+        addBtn.onclick = () => {
+            t[kind].push({ id: "", price: 0 });
+            renderTraderList(kind);
+            updateTraderPreview();
+        };
+    }
+}
+
+function attachTraderCreatorListeners() {
+    const t = traderCreatorState.trader;
+    document.getElementById('trader-id').oninput = e => {
+        t.id = e.target.value.trim();
+        updateTraderPreview();
+    };
+
+    document.getElementById('confirm-trader-btn').onclick = () => {
+        if (!t.id) { alert('Please enter a Trader ID.'); return; }
+        const copy = JSON.parse(JSON.stringify(t));
+        savedTraders.push(copy);
+        renderSavedTraders();
+        renderTraderDownloadButtons();
+        clearTraderInputs();
+        updateTraderPreview();
+    };
+}
+
+function updateTraderPreview() {
+    const t = traderCreatorState.trader;
+    const buyStr = (t.buy || []).map(b => `    { id: "${b.id}", price: ${b.price} }`).join(",\n");
+    const sellStr = (t.sell || []).map(s => `    { id: "${s.id}", price: ${s.price} }`).join(",\n");
+    const preview =
+`{
+  buy: [
+${buyStr}
+  ],
+  sell: [
+${sellStr}
+  ]
+}`;
+    const previewEl = document.getElementById('trader-def-preview');
+    if (previewEl) previewEl.textContent = preview;
+}
+
+// Matches traders.js's exact formatting: 4-space indent, 8-space indent for
+// each {id, price} entry, trailing comma so entries can be joined directly.
+function getTraderDefinitionCode(t) {
+    const buyStr = (t.buy || []).map(b => `        { id: "${b.id}", price: ${b.price} }`).join(",\n");
+    const sellStr = (t.sell || []).map(s => `        { id: "${s.id}", price: ${s.price} }`).join(",\n");
+    return `${t.id}: {
+    buy: [
+${buyStr}
+    ],
+    sell: [
+${sellStr}
+    ]
+},`;
+}
+
+function clearTraderInputs() {
+    traderCreatorState.trader = {
+        id: suggestNextTraderId(),
+        buy: [],
+        sell: []
+    };
+    showToolOptions("trader");
+}
+
+function renderSavedTraders() {
+    renderSavedList({
+        listElId: 'saved-traders-list',
+        getItems: () => savedTraders,
+        rowClass: 'saved-trader-row',
+        editBtnClass: 'edit-trader-btn',
+        deleteBtnClass: 'delete-trader-btn',
+        emptyMessage: 'No traders saved yet.',
+        label: t => `${t.id} <span style="opacity:0.7;">(${(t.buy || []).length} buy / ${(t.sell || []).length} sell)</span>`,
+        toolKey: 'trader',
+        setDraft: item => { traderCreatorState.trader = item; },
+        onEdit: () => {
+            renderTraderList('buy');
+            renderTraderList('sell');
+            renderTraderDownloadButtons();
+        },
+        onDelete: () => {
+            renderTraderDownloadButtons();
+        }
+    });
+}
+
+function renderTraderDownloadButtons() {
+    renderDownloadButtons('trader-download-buttons', [
+        {
+            id: 'download-trader-defs', label: 'Download Trader Definitions', filename: 'trader_definitions.js',
+            buildCode: () => savedTraders.map(t => getTraderDefinitionCode(t)).join("\n\n")
+        }
+    ]);
 }
 
 function renderSavedSkills() {
