@@ -17,8 +17,7 @@ const creatorState = {
         questName: "",
         questDescription: "",
         questRedoable: false,
-        npcForced: false,
-        triggerTiles: "",
+        forcedEncounter: { enabled: false, triggerTiles: [], triggered: false },
         questGiven: "",
         questIncomplete: "",
         questComplete: "",
@@ -56,6 +55,7 @@ let wanderFirstCorner = null;
 let enemySpawnSelectionStep = 0; 
 let enemySpawnFirstCorner = null;
 let enemyCurrentWanderArea = null;
+let forcedEncounterPicking = false; // true while clicking the map adds/removes trigger tiles
 
 const triggerCreatorState = {
     trigger: {
@@ -565,6 +565,12 @@ function showToolOptions(tool) {
     const optionsDiv = document.getElementById('creator-tool-options');
     if (tool === 'npc') {
         const npc = creatorState.npc;
+        // Defensive backfill: NPCs saved/autosaved before forcedEncounter existed
+        // (or using the old flat npcForced/triggerTiles string) would otherwise
+        // crash here.
+        if (!npc.forcedEncounter || typeof npc.forcedEncounter !== 'object' || !Array.isArray(npc.forcedEncounter.triggerTiles)) {
+            npc.forcedEncounter = { enabled: !!npc.npcForced, triggerTiles: [], triggered: false };
+        }
         optionsDiv.innerHTML = `
             <h3>NPC Creator</h3>
             <div style="display:flex; flex-direction:column; gap:12px; max-width:520px;">
@@ -592,6 +598,18 @@ function showToolOptions(tool) {
                 </label>
                 <button id="npc-set-wander-btn" style="margin-top:8px;">Set Wander Area & Spawn</button>
                 <div id="npc-wander-preview" style="margin-top:8px;"></div>
+                <fieldset style="border:1px solid #35374a; border-radius:6px; padding:8px; margin-top:4px;">
+                    <legend>Forced Encounter</legend>
+                    <div style="color:#9aa4b2; font-size:11px; margin-bottom:6px;">Independent of quests -- an NPC can force an encounter without giving a quest at all.</div>
+                    <label style="display:flex; gap:8px; align-items:center;">
+                        <input type="checkbox" id="npc-forced-enabled" ${npc.forcedEncounter.enabled ? "checked" : ""}/> Enabled
+                    </label>
+                    <div id="npc-forced-section" style="display:${npc.forcedEncounter.enabled ? "flex" : "none"}; flex-direction:column; gap:8px; margin-top:8px;">
+                        <button id="npc-set-trigger-tiles-btn" type="button">${forcedEncounterPicking ? "Done Picking (click tiles on map)" : "Pick Trigger Tiles on Map"}</button>
+                        <div id="npc-forced-preview" style="color:#9aa4b2; font-size:12px;">${npc.forcedEncounter.triggerTiles.length} tile(s) selected.</div>
+                        <button id="npc-clear-trigger-tiles-btn" type="button">Clear Trigger Tiles</button>
+                    </div>
+                </fieldset>
                 <label style="margin-top:8px;">
                     <input type="checkbox" id="npc-has-quest" ${npc.hasQuest ? "checked" : ""}/> This NPC gives a quest
                 </label>
@@ -613,14 +631,6 @@ function showToolOptions(tool) {
                     <label>
                         <input type="checkbox" id="quest-redoable" ${npc.questRedoable ? "checked" : ""}/> Quest is redoable
                     </label>
-                    <label>
-                        <input type="checkbox" id="npc-forced" ${npc.npcForced ? "checked" : ""}/> Forced encounter
-                    </label>
-                    <div id="npc-forced-section" style="display:${npc.npcForced ? "flex" : "none"}; margin-top:8px;">
-                        <label>Trigger Tiles (comma separated, e.g. 44,46 45,46):<br>
-                            <input type="text" id="npc-trigger-tiles" value="${npc.triggerTiles}" style="width:100%;" placeholder="x,y x,y ..." />
-                        </label>
-                    </div>
                     <label>
                         Quest Given Dialogue:<br>
                         <textarea id="quest-given-dialogue" rows="2" style="width:100%;" placeholder="One line per dialogue">${npc.questGiven}</textarea>
@@ -1117,16 +1127,28 @@ function showToolOptions(tool) {
 // Quest Type Options Renderer 
 function renderQuestTypeOptions(npc) {
     switch (npc.questType) {
-        case "itemCollect":
-            return `<label>Item ID:<br>
-                <input type="text" id="quest-item-id" value="${npc.questTypeOptions.itemId || ""}" style="width:100%;" placeholder="e.g. dewleaf" /></label>
+        case "itemCollect": {
+            const itemOptions = getKnownItemOptions();
+            const currentId = npc.questTypeOptions.itemId || "";
+            const isKnown = itemOptions.some(([id]) => id === currentId);
+            return `<label>Item:<br>
+                <select id="quest-item-id" style="width:100%;">
+                    <option value="">-- select item --</option>
+                    ${itemOptions.map(([id, name]) => `<option value="${id}" ${currentId === id ? "selected" : ""}>${id}${name && name !== id ? " — " + name : ""}</option>`).join("")}
+                    ${currentId && !isKnown ? `<option value="${currentId}" selected>${currentId} (not in catalog)</option>` : ""}
+                </select></label>
                 <label>Required Amount:<br>
                 <input type="number" id="quest-item-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
+        }
         case "gift":
-            return "";
+            return `<div style="color:#9aa4b2; font-size:11px;">Gifts hand over an item without requiring anything back -- just set the reward below.</div>`;
         case "enemyDefeat":
             return `<label>Enemy ID:<br>
-                <input type="text" id="quest-enemy-id" value="${npc.questTypeOptions.enemyId || ""}" style="width:100%;" placeholder="e.g. slime_01" /></label>
+                <input type="text" id="quest-enemy-id" value="${npc.questTypeOptions.enemyId || ""}" list="quest-enemy-datalist" style="width:100%;" placeholder="e.g. slime_01" />
+                <datalist id="quest-enemy-datalist">
+                    ${savedEnemies.map(en => en.id ? `<option value="${en.id}">` : "").join("")}
+                </datalist></label>
+                <div style="color:#9aa4b2; font-size:11px;">Suggestions come from enemies saved this session -- the toolkit doesn't fetch a live enemy catalog to check against (only items/traders/quests/NPCs/interact &amp; trigger tiles are fetched).</div>
                 <label>Required Amount:<br>
                 <input type="number" id="quest-enemy-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
         case "statBuild":
@@ -1134,11 +1156,19 @@ function renderQuestTypeOptions(npc) {
                 <input type="text" id="quest-stat-key" value="${npc.questTypeOptions.stat || ""}" style="width:100%;" placeholder="e.g. maxHealth" /></label>
                 <label>Required Amount:<br>
                 <input type="number" id="quest-stat-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
-        case "interactTiles":
-            return `<label>Interact Tile IDs (comma separated):<br>
-                <input type="text" id="quest-interact-ids" value="${npc.questTypeOptions.interactTileIds || ""}" style="width:100%;" placeholder="e.g. statue_f3_1,statue_f3_2" /></label>
+        case "interactTiles": {
+            const knownTiles = getKnownInteractTileIds();
+            const selected = new Set(Array.isArray(npc.questTypeOptions.interactTileIds) ? npc.questTypeOptions.interactTileIds : []);
+            return `<label>Interact Tiles:</label>
+                <div id="quest-interact-tile-checks" style="max-height:140px; overflow-y:auto; background:#181a20; border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:4px;">
+                    ${knownTiles.length ? knownTiles.map(id => `
+                        <label style="display:flex; gap:8px; align-items:center; font-weight:normal;">
+                            <input type="checkbox" class="quest-interact-tile-check" value="${id}" ${selected.has(id) ? "checked" : ""}/> ${id}
+                        </label>`).join("") : `<div style="color:#9aa4b2; font-size:12px;">No interactable tiles saved yet -- create some in the Interactable Tile Creator first.</div>`}
+                </div>
                 <label>Required Amount:<br>
                 <input type="number" id="quest-interact-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
+        }
         default:
             return "";
     }
@@ -1163,6 +1193,26 @@ function attachCreatorListeners() {
         updateWanderPrompt();
     };
 
+    // Forced Encounter -- independent of quest state
+    document.getElementById('npc-forced-enabled').onchange = e => {
+        npc.forcedEncounter.enabled = e.target.checked;
+        if (!npc.forcedEncounter.enabled) forcedEncounterPicking = false;
+        showToolOptions("npc");
+        updateCreatorPreview();
+    };
+    if (npc.forcedEncounter.enabled) {
+        document.getElementById('npc-set-trigger-tiles-btn').onclick = () => {
+            forcedEncounterPicking = !forcedEncounterPicking;
+            showToolOptions("npc");
+        };
+        document.getElementById('npc-clear-trigger-tiles-btn').onclick = () => {
+            npc.forcedEncounter.triggerTiles = [];
+            updateForcedEncounterPrompt();
+            updateCreatorPreview();
+            if (typeof drawMap === "function") drawMap();
+        };
+    }
+
     // Quest fields 
     if (npc.hasQuest) {
         document.getElementById('quest-id').oninput = e => { npc.questId = e.target.value; updateCreatorPreview(); };
@@ -1175,10 +1225,6 @@ function attachCreatorListeners() {
         };
         document.getElementById('quest-description').oninput = e => { npc.questDescription = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-redoable').onchange = e => { npc.questRedoable = e.target.checked; updateCreatorPreview(); };
-        document.getElementById('npc-forced').onchange = e => { npc.npcForced = e.target.checked; showToolOptions("npc"); };
-        if (npc.npcForced) {
-            document.getElementById('npc-trigger-tiles').oninput = e => { npc.triggerTiles = e.target.value; updateCreatorPreview(); };
-        }
         document.getElementById('quest-given-dialogue').oninput = e => { npc.questGiven = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-incomplete-dialogue').oninput = e => { npc.questIncomplete = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-complete-dialogue').oninput = e => { npc.questComplete = e.target.value; updateCreatorPreview(); };
@@ -1190,7 +1236,7 @@ function attachCreatorListeners() {
         // Quest type options
         switch (npc.questType) {
             case "itemCollect":
-                document.getElementById('quest-item-id').oninput = e => { npc.questTypeOptions.itemId = e.target.value; updateCreatorPreview(); };
+                document.getElementById('quest-item-id').onchange = e => { npc.questTypeOptions.itemId = e.target.value; updateCreatorPreview(); };
                 document.getElementById('quest-item-amount').oninput = e => { npc.questTypeOptions.requiredAmount = e.target.value; updateCreatorPreview(); };
                 break;
             case "gift":
@@ -1204,7 +1250,12 @@ function attachCreatorListeners() {
                 document.getElementById('quest-stat-amount').oninput = e => { npc.questTypeOptions.requiredAmount = e.target.value; updateCreatorPreview(); };
                 break;
             case "interactTiles":
-                document.getElementById('quest-interact-ids').oninput = e => { npc.questTypeOptions.interactTileIds = e.target.value; updateCreatorPreview(); };
+                document.querySelectorAll('.quest-interact-tile-check').forEach(cb => {
+                    cb.onchange = () => {
+                        npc.questTypeOptions.interactTileIds = Array.from(document.querySelectorAll('.quest-interact-tile-check:checked')).map(c => c.value);
+                        updateCreatorPreview();
+                    };
+                });
                 document.getElementById('quest-interact-amount').oninput = e => { npc.questTypeOptions.requiredAmount = e.target.value; updateCreatorPreview(); };
                 break;
         }
@@ -1234,8 +1285,7 @@ function clearNpcInputs() {
         questName: "",
         questDescription: "",
         questRedoable: false,
-        npcForced: false,
-        triggerTiles: "",
+        forcedEncounter: { enabled: false, triggerTiles: [], triggered: false },
         questGiven: "",
         questIncomplete: "",
         questComplete: "",
@@ -1279,13 +1329,16 @@ function renderRewardsList() {
     }
     const listDiv = document.getElementById('quest-rewards-list');
     if (!listDiv) return;
+    const statKeys = ["xp", "attack", "defence", "maxHealth", "attackSpeed"];
+    const knownItemIds = getKnownItemOptions().map(([id]) => id);
+    const datalistOptions = [...statKeys, ...knownItemIds].map(v => `<option value="${v}">`).join("");
     listDiv.innerHTML = rewards.map((r, i) => `
         <div class="reward-row" data-idx="${i}" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
-            <input type="text" class="reward-name" value="${r.id || Object.keys(r)[0] || ''}" placeholder="Reward name (id/xp/attack...)" style="width:120px;">
+            <input type="text" class="reward-name" list="quest-reward-datalist" value="${r.id || Object.keys(r)[0] || ''}" placeholder="Reward name (id/xp/attack...)" style="width:160px;">
             <input type="number" class="reward-amount" value="${r.amount || r[Object.keys(r)[0]] || 1}" min="1" style="width:60px;">
             <button type="button" class="remove-reward-btn">Remove</button>
         </div>
-    `).join("");
+    `).join("") + `<datalist id="quest-reward-datalist">${datalistOptions}</datalist>`;
 }
 
 function attachRewardListeners() {
@@ -1323,7 +1376,7 @@ function attachRewardListeners() {
             newRow.className = 'reward-row';
             newRow.style = "display:flex; gap:8px; align-items:center; margin-bottom:4px;";
             newRow.innerHTML = `
-                <input type="text" class="reward-name" placeholder="Reward name (id/xp/attack...)" style="width:120px;">
+                <input type="text" class="reward-name" list="quest-reward-datalist" placeholder="Reward name (id/xp/attack...)" style="width:160px;">
                 <input type="number" class="reward-amount" value="1" min="1" style="width:60px;">
                 <button type="button" class="remove-reward-btn">Remove</button>
             `;
@@ -1374,11 +1427,8 @@ function updateCreatorPreview() {
 
     // Forced Encounter
     let forcedEncounterPreview = "";
-    if (npc.npcForced && npc.triggerTiles) {
-        const triggers = npc.triggerTiles.split(' ').map(pair => {
-            const [x, y] = pair.split(',').map(Number);
-            return (!isNaN(x) && !isNaN(y)) ? `      { x: ${x}, y: ${y} }` : null;
-        }).filter(Boolean).join(",\n");
+    if (npc.forcedEncounter && npc.forcedEncounter.enabled) {
+        const triggers = npc.forcedEncounter.triggerTiles.map(t => `      { x: ${t.x}, y: ${t.y} }`).join(",\n");
         forcedEncounterPreview = `
   forcedEncounter: {
     enabled: true,
@@ -1418,6 +1468,7 @@ ${forcedEncounterPreview ? forcedEncounterPreview : ""}
                 break;
             }
             case "gift": {
+                questTypeObj.requiredItems = []; // real quests.js always includes this empty array for gift quests
                 break;
             }
             case "enemyDefeat":
@@ -1428,10 +1479,12 @@ ${forcedEncounterPreview ? forcedEncounterPreview : ""}
                 questTypeObj.stat = npc.questTypeOptions.stat || "";
                 questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
                 break;
-            case "interactTiles":
-                questTypeObj.interactTileIds = (npc.questTypeOptions.interactTileIds || "").split(',').map(s => s.trim()).filter(Boolean);
+            case "interactTiles": {
+                const rawIds = npc.questTypeOptions.interactTileIds;
+                questTypeObj.interactTileIds = Array.isArray(rawIds) ? rawIds : (rawIds || "").split(',').map(s => s.trim()).filter(Boolean);
                 questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
                 break;
+            }
         }
         let rewards = [];
         try {
@@ -1490,6 +1543,15 @@ function updateWanderPrompt() {
             else
                 previewDiv.textContent = "";
     }
+}
+
+function updateForcedEncounterPrompt() {
+    const previewDiv = document.getElementById('npc-forced-preview');
+    if (!previewDiv) return;
+    const count = creatorState.npc.forcedEncounter.triggerTiles.length;
+    previewDiv.textContent = forcedEncounterPicking
+        ? `${count} tile(s) selected. Click tiles on the map to add/remove them.`
+        : `${count} tile(s) selected.`;
 }
 
 // Map Engine for Preview Map 
@@ -1676,6 +1738,20 @@ function showCreatorMap(mapData, loadedAssets = {}) {
             ctx.stroke();
             ctx.restore();
         }
+        // Forced Encounter trigger tiles (current draft) -- distinct red so they
+        // don't get confused with the gold wander area or green spawn marker.
+        if (npc.forcedEncounter && npc.forcedEncounter.enabled && npc.forcedEncounter.triggerTiles.length) {
+            ctx.save();
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = "#e74c3c";
+            ctx.strokeStyle = "#e74c3c";
+            ctx.lineWidth = 2;
+            npc.forcedEncounter.triggerTiles.forEach(({x, y}) => {
+                ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+            });
+            ctx.restore();
+        }
         savedNpcs.forEach(npc => {
             // Highlight wander area
             const tiles = getWanderTiles(npc.wanderArea);
@@ -1726,6 +1802,18 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                         ctx.restore();
                     }
                 });
+            }
+            if (npc.forcedEncounter && npc.forcedEncounter.enabled && Array.isArray(npc.forcedEncounter.triggerTiles) && npc.forcedEncounter.triggerTiles.length) {
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = "#e74c3c";
+                ctx.strokeStyle = "#e74c3c";
+                ctx.lineWidth = 2;
+                npc.forcedEncounter.triggerTiles.forEach(({x, y}) => {
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                });
+                ctx.restore();
             }
         });
         // Highlight enemy selection area during selection
@@ -2162,6 +2250,18 @@ function showCreatorMap(mapData, loadedAssets = {}) {
                 }
             }
         }
+
+        // Forced Encounter trigger-tile picking: each click toggles a tile in/out
+        // of the set, since the real tiles are an arbitrary shape, not a rectangle.
+        if (forcedEncounterPicking) {
+            const tiles = creatorState.npc.forcedEncounter.triggerTiles;
+            const idx = tiles.findIndex(t => t.x === x && t.y === y);
+            if (idx >= 0) tiles.splice(idx, 1);
+            else tiles.push({ x, y });
+            updateForcedEncounterPrompt();
+            updateCreatorPreview();
+            drawMap();
+        }
     
         // Enemy Spawn Selection
         if (enemySpawnSelectionStep !== 0) {
@@ -2381,11 +2481,22 @@ function getNpcDefinitionCode(npc) {
 
     // Forced Encounter
     let forcedEncounterPreview = "";
-    if (npc.npcForced && npc.triggerTiles) {
-        const triggers = npc.triggerTiles.split(' ').map(pair => {
+    let feEnabled = false;
+    let feTiles = [];
+    if (npc.forcedEncounter && typeof npc.forcedEncounter === 'object' && Array.isArray(npc.forcedEncounter.triggerTiles)) {
+        feEnabled = !!npc.forcedEncounter.enabled;
+        feTiles = npc.forcedEncounter.triggerTiles;
+    } else if (npc.npcForced && npc.triggerTiles) {
+        // Backward-compat: NPCs saved before this update used a flat
+        // "x,y x,y" string instead of a real forcedEncounter object.
+        feEnabled = true;
+        feTiles = npc.triggerTiles.split(' ').map(pair => {
             const [x, y] = pair.split(',').map(Number);
-            return (!isNaN(x) && !isNaN(y)) ? `      { x: ${x}, y: ${y} }` : null;
-        }).filter(Boolean).join(",\n");
+            return (!isNaN(x) && !isNaN(y)) ? { x, y } : null;
+        }).filter(Boolean);
+    }
+    if (feEnabled) {
+        const triggers = feTiles.map(t => `      { x: ${t.x}, y: ${t.y} }`).join(",\n");
         forcedEncounterPreview = 
 `  forcedEncounter: {
     enabled: true,
@@ -2422,6 +2533,7 @@ function getQuestDefinitionCode(npc) {
             break;
         }
         case "gift": {
+            questTypeObj.requiredItems = []; // real quests.js always includes this empty array for gift quests
             break;
         }
         case "enemyDefeat":
@@ -2432,10 +2544,12 @@ function getQuestDefinitionCode(npc) {
             questTypeObj.stat = npc.questTypeOptions.stat || "";
             questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
             break;
-        case "interactTiles":
-            questTypeObj.interactTileIds = (npc.questTypeOptions.interactTileIds || "").split(',').map(s => s.trim()).filter(Boolean);
+        case "interactTiles": {
+            const rawIds = npc.questTypeOptions.interactTileIds;
+            questTypeObj.interactTileIds = Array.isArray(rawIds) ? rawIds : (rawIds || "").split(',').map(s => s.trim()).filter(Boolean);
             questTypeObj.requiredAmount = Number(npc.questTypeOptions.requiredAmount) || 1;
             break;
+        }
     }
     let rewards = [];
     try {
@@ -3590,6 +3704,15 @@ function getKnownItemOptions() {
     Object.values(definitions.items || {}).forEach(it => { if (it && it.id) map[it.id] = it.name || it.id; });
     savedItems.forEach(it => { if (it && it.id) map[it.id] = it.name || it.id; });
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+// Same idea, for interactTiles-type quests: combines the live interact tile
+// catalog with anything saved locally this session.
+function getKnownInteractTileIds() {
+    const set = new Set();
+    (definitions.interactTiles || []).forEach(t => { if (t && t.id) set.add(t.id); });
+    savedInteractTiles.forEach(t => { if (t && t.id) set.add(t.id); });
+    return Array.from(set).sort();
 }
 
 // Suggests the next free "traderN" id by looking at both the live trader
