@@ -24,6 +24,7 @@ const creatorState = {
         questType: "gift",
         questTypeOptions: {},
         questRewards: "",
+        questIcon: "", // optional; shown in quest UI when there's no inventory icon to use
         questIdManual: false 
     }
 };
@@ -548,6 +549,7 @@ function showToolPanel() {
             <button class="tool-btn" data-tool="item">Item Creator</button>
             <button class="tool-btn" data-tool="skill">Skill Creator</button>
             <button class="tool-btn" data-tool="trader">Trader Creator</button>
+            <button class="tool-btn" data-tool="check">🔍 Consistency Check</button>
         </div>
     `;
     sidebar.querySelectorAll('.tool-btn').forEach(btn => {
@@ -660,6 +662,10 @@ function showToolOptions(tool) {
                         Rewards:<br>
                         <div id="quest-rewards-list" style="margin-bottom:8px;"></div>
                         <button id="add-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
+                    </label>
+                    <label style="margin-top:8px;">
+                        Quest Icon (optional -- shown in quest UI when there's no inventory icon to use):<br>
+                        <input type="text" id="quest-icon" value="${npc.questIcon || ""}" style="width:100%;" placeholder="e.g. statue_01" />
                     </label>
                 </div>
                 ` : ""}
@@ -1118,6 +1124,21 @@ function showToolOptions(tool) {
         renderTraderList('sell');
         attachTraderCreatorListeners();
         updateTraderPreview();
+    } else if (tool === 'check') {
+        optionsDiv.innerHTML = `
+            <h3>Consistency Check</h3>
+            <div style="color:#9aa4b2; font-size:12px; margin-bottom:12px;">
+                Scans everything saved this session for dangling references (IDs that
+                don't exist), duplicate IDs that would silently overwrite each other on
+                export, and obviously incomplete entries. This only checks cross-references
+                between saved entities -- it can't verify that image/sound files actually
+                exist on disk.
+            </div>
+            <button id="run-check-btn" type="button">Re-run Check</button>
+            <div id="check-results" style="margin-top:16px;"></div>
+        `;
+        document.getElementById('run-check-btn').onclick = renderCheckResults;
+        renderCheckResults();
     } else {
         optionsDiv.innerHTML = `<h3>${tool.charAt(0).toUpperCase() + tool.slice(1)} Tool</h3>
             <div>Tool options and inputs will appear here.</div>`;
@@ -1142,15 +1163,19 @@ function renderQuestTypeOptions(npc) {
         }
         case "gift":
             return `<div style="color:#9aa4b2; font-size:11px;">Gifts hand over an item without requiring anything back -- just set the reward below.</div>`;
-        case "enemyDefeat":
-            return `<label>Enemy ID:<br>
-                <input type="text" id="quest-enemy-id" value="${npc.questTypeOptions.enemyId || ""}" list="quest-enemy-datalist" style="width:100%;" placeholder="e.g. slime_01" />
-                <datalist id="quest-enemy-datalist">
-                    ${savedEnemies.map(en => en.id ? `<option value="${en.id}">` : "").join("")}
-                </datalist></label>
-                <div style="color:#9aa4b2; font-size:11px;">Suggestions come from enemies saved this session -- the toolkit doesn't fetch a live enemy catalog to check against (only items/traders/quests/NPCs/interact &amp; trigger tiles are fetched).</div>
+        case "enemyDefeat": {
+            const enemyOptions = getKnownEnemyOptions();
+            const currentId = npc.questTypeOptions.enemyId || "";
+            const isKnown = enemyOptions.some(([id]) => id === currentId);
+            return `<label>Enemy:<br>
+                <select id="quest-enemy-id" style="width:100%;">
+                    <option value="">-- select enemy --</option>
+                    ${enemyOptions.map(([id, name]) => `<option value="${id}" ${currentId === id ? "selected" : ""}>${id}${name && name !== id ? " — " + name : ""}</option>`).join("")}
+                    ${currentId && !isKnown ? `<option value="${currentId}" selected>${currentId} (not in catalog)</option>` : ""}
+                </select></label>
                 <label>Required Amount:<br>
                 <input type="number" id="quest-enemy-amount" min="1" value="${npc.questTypeOptions.requiredAmount || 1}" style="width:80px;" /></label>`;
+        }
         case "statBuild":
             return `<label>Stat Key:<br>
                 <input type="text" id="quest-stat-key" value="${npc.questTypeOptions.stat || ""}" style="width:100%;" placeholder="e.g. maxHealth" /></label>
@@ -1229,6 +1254,7 @@ function attachCreatorListeners() {
         document.getElementById('quest-incomplete-dialogue').oninput = e => { npc.questIncomplete = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-complete-dialogue').oninput = e => { npc.questComplete = e.target.value; updateCreatorPreview(); };
         document.getElementById('quest-type').onchange = e => { npc.questType = e.target.value; showToolOptions("npc"); };
+        document.getElementById('quest-icon').oninput = e => { npc.questIcon = e.target.value.trim(); updateCreatorPreview(); };
 
         renderRewardsList();
         attachRewardListeners();
@@ -1242,7 +1268,7 @@ function attachCreatorListeners() {
             case "gift":
                 break;
             case "enemyDefeat":
-                document.getElementById('quest-enemy-id').oninput = e => { npc.questTypeOptions.enemyId = e.target.value; updateCreatorPreview(); };
+                document.getElementById('quest-enemy-id').onchange = e => { npc.questTypeOptions.enemyId = e.target.value; updateCreatorPreview(); };
                 document.getElementById('quest-enemy-amount').oninput = e => { npc.questTypeOptions.requiredAmount = e.target.value; updateCreatorPreview(); };
                 break;
             case "statBuild":
@@ -1291,7 +1317,8 @@ function clearNpcInputs() {
         questComplete: "",
         questType: "gift",
         questTypeOptions: {},
-        questRewards: ""
+        questRewards: "",
+        questIcon: ""
     };
     showToolOptions("npc");
 }
@@ -1514,7 +1541,9 @@ ${forcedEncounterPreview ? forcedEncounterPreview : ""}
     if (r.id) return `{ id: "${r.id}", amount: ${r.amount || 1} }`;
     let keys = Object.keys(r).filter(k => k !== "id" && k !== "amount");
     return keys.map(k => `{ ${k}: ${r[k]} }`).join(", ");
-  }).join(", ")}],
+  }).join(", ")}],${
+    npc.questIcon ? `\n  icon: "${npc.questIcon}",` : ""
+  }
   redoable: ${!!npc.questRedoable}
 }`;
 
@@ -2577,7 +2606,9 @@ function getQuestDefinitionCode(npc) {
         if (r.id) return `{ id: "${r.id}", amount: ${r.amount || 1} }`;
         let keys = Object.keys(r).filter(k => k !== "id" && k !== "amount");
         return keys.map(k => `{ ${k}: ${r[k]} }`).join(", ");
-    }).join(", ")}],
+    }).join(", ")}],${
+        npc.questIcon ? `\n    icon: "${npc.questIcon}",` : ""
+    }
     redoable: ${!!npc.questRedoable}
 },`;
 }
@@ -3706,6 +3737,16 @@ function getKnownItemOptions() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+// Same idea, for enemyDefeat-type quests: main.js actually does parse ENEMY_TYPES
+// out of charactersData.js into definitions.enemies (it lives in the same file
+// as NPC_DEFINITIONS), combined with any enemies saved locally this session.
+function getKnownEnemyOptions() {
+    const map = {};
+    Object.values(definitions.enemies || {}).forEach(en => { if (en && en.id) map[en.id] = en.name || en.id; });
+    savedEnemies.forEach(en => { if (en && en.id) map[en.id] = en.name || en.id; });
+    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 // Same idea, for interactTiles-type quests: combines the live interact tile
 // catalog with anything saved locally this session.
 function getKnownInteractTileIds() {
@@ -3713,6 +3754,193 @@ function getKnownInteractTileIds() {
     (definitions.interactTiles || []).forEach(t => { if (t && t.id) set.add(t.id); });
     savedInteractTiles.forEach(t => { if (t && t.id) set.add(t.id); });
     return Array.from(set).sort();
+}
+
+// --- Consistency Checker ---
+// Scans everything saved this session for dangling cross-references (an ID
+// that's typed/stored somewhere but doesn't actually exist), duplicate IDs
+// within a category (which would silently overwrite each other when pasted
+// into the real *_DEFINITIONS object), and obviously incomplete entries.
+// Deliberately does NOT try to verify that image/sound file paths actually
+// exist on disk -- that's out of reach from the browser.
+function runConsistencyCheck() {
+    const issues = [];
+    const add = (severity, category, label, message) => issues.push({ severity, category, label, message });
+
+    const knownItemIds = new Set(getKnownItemOptions().map(([id]) => id));
+    const knownEnemyIds = new Set(getKnownEnemyOptions().map(([id]) => id));
+    const knownInteractTileIds = new Set(getKnownInteractTileIds());
+    const knownTraderIds = new Set([
+        ...Object.keys(definitions.traders || {}),
+        ...savedTraders.map(t => t.id).filter(Boolean)
+    ]);
+
+    function checkRewards(rewards, category, label) {
+        (rewards || []).forEach(r => {
+            if (r && r.id && !knownItemIds.has(r.id)) {
+                add('error', category, label, `Reward references unknown item "${r.id}"`);
+            }
+        });
+    }
+
+    function checkDuplicateIds(ids, category) {
+        const counts = new Map();
+        ids.forEach(id => { if (id) counts.set(id, (counts.get(id) || 0) + 1); });
+        counts.forEach((count, id) => {
+            if (count > 1) add('error', category, id, `Duplicate ID "${id}" used ${count} times -- later ones will silently overwrite earlier ones on export`);
+        });
+    }
+
+    // ---- NPCs ----
+    const npcIds = [];
+    savedNpcs.forEach(npc => {
+        const label = npc.name || "(unnamed NPC)";
+        npcIds.push(npc.id || normalizeIdFromName(npc.name || ""));
+        if (!npc.name) add('error', 'NPC', label, 'Missing name');
+        if (npc.trader && !knownTraderIds.has(npc.trader)) {
+            add('error', 'NPC', label, `References unknown trader "${npc.trader}"`);
+        }
+        if (npc.forcedEncounter && npc.forcedEncounter.enabled && (!npc.forcedEncounter.triggerTiles || !npc.forcedEncounter.triggerTiles.length)) {
+            add('warning', 'NPC', label, 'Forced Encounter is enabled but has no trigger tiles selected');
+        }
+        if (npc.hasQuest) {
+            const qLabel = `${label}'s quest`;
+            if (!npc.questName) add('warning', 'NPC', qLabel, 'Quest has no name');
+            let rewards = [];
+            try { rewards = JSON.parse(npc.questRewards || "[]"); } catch (e) { /* ignore */ }
+            if (!rewards.length) add('warning', 'NPC', qLabel, 'Quest has no rewards at all');
+            checkRewards(rewards, 'NPC', qLabel);
+
+            const qOpts = npc.questTypeOptions || {};
+            if (npc.questType === 'itemCollect') {
+                if (!qOpts.itemId) add('error', 'NPC', qLabel, 'Item Collect quest has no item selected');
+                else if (!knownItemIds.has(qOpts.itemId)) add('error', 'NPC', qLabel, `References unknown item "${qOpts.itemId}"`);
+            } else if (npc.questType === 'enemyDefeat') {
+                if (!qOpts.enemyId) add('error', 'NPC', qLabel, 'Enemy Defeat quest has no enemy selected');
+                else if (!knownEnemyIds.has(qOpts.enemyId)) add('error', 'NPC', qLabel, `References unknown enemy "${qOpts.enemyId}"`);
+            } else if (npc.questType === 'interactTiles') {
+                const tileIds = Array.isArray(qOpts.interactTileIds) ? qOpts.interactTileIds : [];
+                if (!tileIds.length) add('error', 'NPC', qLabel, 'Interact Tiles quest has no tiles selected');
+                tileIds.forEach(id => {
+                    if (!knownInteractTileIds.has(id)) add('error', 'NPC', qLabel, `References unknown interact tile "${id}"`);
+                });
+            }
+        }
+    });
+    checkDuplicateIds(npcIds, 'NPC');
+
+    // ---- Enemies ----
+    const enemyIds = [];
+    savedEnemies.forEach(en => {
+        const label = en.name || en.id || "(unnamed enemy)";
+        enemyIds.push(en.id);
+        if (!en.id) add('error', 'Enemy', label, 'Missing ID');
+        (en.loot || []).forEach(l => {
+            if (l.item && !knownItemIds.has(l.item)) add('error', 'Enemy', label, `Loot references unknown item "${l.item}"`);
+        });
+    });
+    checkDuplicateIds(enemyIds, 'Enemy');
+
+    // ---- Trigger Tiles ----
+    const triggerIds = [];
+    savedTriggers.forEach(t => {
+        const label = t.id || "(unnamed trigger tile)";
+        triggerIds.push(t.id);
+        if (!t.id) add('error', 'Trigger Tile', label, 'Missing ID');
+        checkRewards(t.rewards, 'Trigger Tile', label);
+    });
+    checkDuplicateIds(triggerIds, 'Trigger Tile');
+
+    // ---- Interactable Tiles ----
+    const interactIds = [];
+    savedInteractTiles.forEach(t => {
+        const label = t.id || "(unnamed interactable)";
+        interactIds.push(t.id);
+        if (!t.id) add('error', 'Interactable Tile', label, 'Missing ID');
+        checkRewards(t.rewards, 'Interactable Tile', label);
+    });
+    checkDuplicateIds(interactIds, 'Interactable Tile');
+
+    // ---- World Sprites ----
+    const spriteIds = [];
+    savedWorldSprites.forEach(s => {
+        const label = s.id || "(unnamed world sprite)";
+        spriteIds.push(s.id);
+        if (!s.id) add('error', 'World Sprite', label, 'Missing ID');
+    });
+    checkDuplicateIds(spriteIds, 'World Sprite');
+
+    // ---- Items ----
+    const itemIds = [];
+    savedItems.forEach(it => {
+        const label = it.name || it.id || "(unnamed item)";
+        itemIds.push(it.id);
+        if (!it.id) add('error', 'Item', label, 'Missing ID');
+        if (it.homePlaceable && (!it.homeDef || !it.homeDef.imageW || !it.homeDef.imageH)) {
+            add('warning', 'Item', label, 'Home Placeable is enabled but image width/height look incomplete');
+        }
+    });
+    checkDuplicateIds(itemIds, 'Item');
+
+    // ---- Skills ----
+    const skillIds = [];
+    savedSkills.forEach(sk => {
+        const label = sk.name || sk.id || "(unnamed skill)";
+        skillIds.push(sk.id);
+        if (!sk.id) add('error', 'Skill', label, 'Missing ID');
+    });
+    checkDuplicateIds(skillIds, 'Skill');
+
+    // ---- Traders ----
+    const traderIdsList = [];
+    savedTraders.forEach(t => {
+        const label = t.id || "(unnamed trader)";
+        traderIdsList.push(t.id);
+        if (!t.id) add('error', 'Trader', label, 'Missing ID');
+        (t.buy || []).forEach(b => { if (b.id && !knownItemIds.has(b.id)) add('error', 'Trader', label, `Buy list references unknown item "${b.id}"`); });
+        (t.sell || []).forEach(s => { if (s.id && !knownItemIds.has(s.id)) add('error', 'Trader', label, `Sell list references unknown item "${s.id}"`); });
+    });
+    checkDuplicateIds(traderIdsList, 'Trader');
+
+    return issues;
+}
+
+function renderCheckResults() {
+    const resultsDiv = document.getElementById('check-results');
+    if (!resultsDiv) return;
+
+    const issues = runConsistencyCheck();
+    const totalEntries = savedNpcs.length + savedEnemies.length + savedTriggers.length +
+        savedInteractTiles.length + savedWorldSprites.length + savedItems.length +
+        savedSkills.length + savedTraders.length;
+
+    if (!issues.length) {
+        resultsDiv.innerHTML = `<div style="color:#4caf50; font-weight:bold;">✅ No issues found across ${totalEntries} saved entries.</div>`;
+        return;
+    }
+
+    const errorCount = issues.filter(i => i.severity === 'error').length;
+    const warningCount = issues.filter(i => i.severity === 'warning').length;
+
+    const grouped = {};
+    issues.forEach(i => { (grouped[i.category] = grouped[i.category] || []).push(i); });
+
+    resultsDiv.innerHTML = `
+        <div style="margin-bottom:16px; font-size:1.05em;">
+            ${errorCount ? `<span style="color:#e74c3c; font-weight:bold;">${errorCount} error${errorCount === 1 ? '' : 's'}</span>` : ''}
+            ${errorCount && warningCount ? ' &nbsp;&middot;&nbsp; ' : ''}
+            ${warningCount ? `<span style="color:#f1c40f; font-weight:bold;">${warningCount} warning${warningCount === 1 ? '' : 's'}</span>` : ''}
+        </div>
+        ${Object.entries(grouped).map(([category, catIssues]) => `
+            <h4 style="margin-bottom:6px;">${category}</h4>
+            ${catIssues.map(i => `
+                <div style="background:#232634; border-left:4px solid ${i.severity === 'error' ? '#e74c3c' : '#f1c40f'}; border-radius:4px; padding:8px 12px; margin-bottom:6px;">
+                    <b>${i.label}</b><br>
+                    <span style="color:${i.severity === 'error' ? '#e74c3c' : '#f1c40f'};">${i.severity === 'error' ? 'Error' : 'Warning'}:</span> ${i.message}
+                </div>
+            `).join("")}
+        `).join("")}
+    `;
 }
 
 // Suggests the next free "traderN" id by looking at both the live trader
