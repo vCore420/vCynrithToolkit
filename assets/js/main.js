@@ -13,6 +13,72 @@ const definitionFiles = {
 
 const definitions = {};
 
+// Known floor display names -- purely cosmetic. Which floors actually EXIST
+// is auto-detected from the live data below (getKnownFloorIndices), so a
+// brand-new floor shows up automatically as "Floor N" the moment anything on
+// it is fetched from the repo. Add an entry here whenever you want a nicer
+// name than that generic fallback -- this is now the only place that needs
+// updating, instead of two separate hardcoded dropdowns drifting apart.
+const FLOOR_NAMES = {
+    0: "Verdant Rise",
+    1: "Stonewake Expanse",
+    2: "Gloomroot Thicket",
+    3: "The Shattered Spires",
+    4: "Umbracourt",
+    5: "The Waystation Veil",
+    6: "The Withering Archipelago"
+};
+
+function getFloorLabel(idx) {
+    const name = FLOOR_NAMES[idx];
+    return name ? `Floor ${idx + 1}: ${name}` : `Floor ${idx + 1}`;
+}
+
+// Scans every fetched category for map/floor references (NPC & enemy
+// spawns, interact & trigger tile positions) and returns the sorted set of
+// floor indices that actually have something on them. This is what makes
+// floor detection automatic -- no list to maintain as Cynrith grows.
+function getKnownFloorIndices() {
+    const found = new Set();
+
+    function scanSpawns(obj) {
+        if (!obj || typeof obj !== "object") return;
+        Object.values(obj).forEach(entry => {
+            if (entry && Array.isArray(entry.spawns)) {
+                entry.spawns.forEach(s => {
+                    const m = Number(s.map);
+                    if (!isNaN(m)) found.add(m);
+                });
+            }
+        });
+    }
+    scanSpawns(definitions.npcs);
+    scanSpawns(definitions.enemies);
+
+    function scanMapField(arr) {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(entry => {
+            const m = Number(entry && entry.map);
+            if (!isNaN(m)) found.add(m);
+        });
+    }
+    scanMapField(definitions.interactTiles);
+    scanMapField(definitions.triggerTiles);
+
+    return Array.from(found).sort((a, b) => a - b);
+}
+
+// Same detected floors, plus a few "room to grow" slots beyond the highest
+// known one -- Floor Creator needs to let you start building on a brand new
+// floor that has zero NPCs/enemies/tiles yet, which getKnownFloorIndices()
+// alone would never surface (there's nothing there to detect).
+function getFloorOptionsForCreator() {
+    const known = getKnownFloorIndices();
+    const maxKnown = known.length ? known[known.length - 1] : -1;
+    const extras = [maxKnown + 1, maxKnown + 2, maxKnown + 3];
+    return Array.from(new Set([...known, ...extras])).sort((a, b) => a - b);
+}
+
 // Fetch and parse definitions
 async function fetchDefinition(url) {
     const res = await fetch(url);

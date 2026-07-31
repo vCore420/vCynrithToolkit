@@ -310,13 +310,7 @@ function renderCreatorTab() {
                 <b>Load Existing Map:</b>
                 <select id="creator-map-select">
                     <option value="">-- New Map --</option>
-                    <option value="0">Floor 1: Verdant Rise</option>
-                    <option value="1">Floor 2: Stonewake Expanse</option>
-                    <option value="2">Floor 3: Gloomroot Thicket</option>
-                    <option value="3">Floor 4: The Shattered Spires</option>
-                    <option value="4">Floor 5: Umbracourt</option>
-                    <option value="5">Floor 6: the Waystation Veil</option>
-                    <option value="6">Floor 7: The Withering Archipelago</option>
+                    ${getFloorOptionsForCreator().map(idx => `<option value="${idx}">${getFloorLabel(idx)}</option>`).join("")}
                 </select>
             </label>
         </div>
