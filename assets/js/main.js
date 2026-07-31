@@ -1,5 +1,6 @@
 // Cynrith Definitions URL 
 const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/vCore420/Cynrith/main/assets/js/DEFINITIONS/";
+const MAP_JS_URL = "https://raw.githubusercontent.com/vCore420/Cynrith/main/assets/js/map/map.js";
 
 const definitionFiles = {
     items: GITHUB_RAW_BASE + "items.js",
@@ -13,32 +14,55 @@ const definitionFiles = {
 
 const definitions = {};
 
-// Known floor display names -- purely cosmetic. Which floors actually EXIST
-// is auto-detected from the live data below (getKnownFloorIndices), so a
-// brand-new floor shows up automatically as "Floor N" the moment anything on
-// it is fetched from the repo. Add an entry here whenever you want a nicer
-// name than that generic fallback -- this is now the only place that needs
-// updating, instead of two separate hardcoded dropdowns drifting apart.
-const FLOOR_NAMES = {
-    0: "Verdant Rise",
-    1: "Stonewake Expanse",
-    2: "Gloomroot Thicket",
-    3: "The Shattered Spires",
-    4: "Umbracourt",
-    5: "The Waystation Veil",
-    6: "The Withering Archipelago"
-};
+// Fetches FLOOR_NAMES and NAMED_MAP_INFO straight from the actual game
+// engine (assets/js/map/map.js) rather than keeping a separate list in the
+// toolkit -- this is the real, authoritative source, so it can never drift
+// out of sync the way two hand-maintained copies did before.
+async function fetchFloorNames() {
+    try {
+        const res = await fetch(MAP_JS_URL);
+        const text = await res.text();
 
-function getFloorLabel(idx) {
-    const name = FLOOR_NAMES[idx];
-    return name ? `Floor ${idx + 1}: ${name}` : `Floor ${idx + 1}`;
+        const namesMatch = text.match(/const\s+FLOOR_NAMES\s*=\s*(\[[\s\S]*?^\]);/m);
+        definitions.floorNames = namesMatch ? eval(namesMatch[1]) : [];
+
+        const namedMapMatch = text.match(/const\s+NAMED_MAP_INFO\s*=\s*({[\s\S]*?^\});/m);
+        definitions.namedMapInfo = namedMapMatch ? eval('(' + namedMapMatch[1] + ')') : {};
+    } catch (e) {
+        console.error('[Editor] Failed to load floor names from map.js:', e);
+        definitions.floorNames = [];
+        definitions.namedMapInfo = {};
+    }
 }
 
-// Scans every fetched category for map/floor references (NPC & enemy
-// spawns, interact & trigger tile positions) and returns the sorted set of
-// floor indices that actually have something on them. This is what makes
-// floor detection automatic -- no list to maintain as Cynrith grows.
-function getKnownFloorIndices() {
+// A "map key" is either a plain floor number (0, 1, 2...) or a special
+// string id like "castle0" or "title1" -- real NPC spawn data actually uses
+// both (e.g. `{ map: "castle0", ... }` right alongside `{ map: 0, ... }`),
+// so anything that only handled numbers would silently drop real content.
+function isNumericMapKey(key) {
+    return key !== "" && key !== null && !isNaN(Number(key));
+}
+
+function getFloorLabel(key) {
+    if (isNumericMapKey(key)) {
+        const idx = Number(key);
+        const name = (definitions.floorNames || [])[idx];
+        return name ? `Floor ${idx + 1}: ${name}` : `Floor ${idx + 1}`;
+    }
+    const info = (definitions.namedMapInfo || {})[key];
+    if (info && info.name) {
+        const parent = (info.floor !== undefined && isNumericMapKey(info.floor)) ? ` (${getFloorLabel(info.floor)})` : "";
+        return `${info.name}${parent}`;
+    }
+    return String(key); // unrecognized special map (e.g. a new "titleN") -- show the raw id rather than hide it
+}
+
+// Scans every fetched category for map references (NPC & enemy spawns,
+// interact & trigger tile positions) and returns the set that actually has
+// something on it -- numeric floors sorted first, then named maps
+// alphabetically. This is what makes floor/map detection automatic, no list
+// to maintain as Cynrith grows.
+function getKnownMapKeys() {
     const found = new Set();
 
     function scanSpawns(obj) {
@@ -46,8 +70,7 @@ function getKnownFloorIndices() {
         Object.values(obj).forEach(entry => {
             if (entry && Array.isArray(entry.spawns)) {
                 entry.spawns.forEach(s => {
-                    const m = Number(s.map);
-                    if (!isNaN(m)) found.add(m);
+                    if (s && s.map !== undefined && s.map !== null && s.map !== "") found.add(s.map);
                 });
             }
         });
@@ -58,22 +81,28 @@ function getKnownFloorIndices() {
     function scanMapField(arr) {
         if (!Array.isArray(arr)) return;
         arr.forEach(entry => {
-            const m = Number(entry && entry.map);
-            if (!isNaN(m)) found.add(m);
+            if (entry && entry.map !== undefined && entry.map !== null && entry.map !== "") found.add(entry.map);
         });
     }
     scanMapField(definitions.interactTiles);
     scanMapField(definitions.triggerTiles);
 
-    return Array.from(found).sort((a, b) => a - b);
+    const all = Array.from(found);
+    const numeric = all.filter(isNumericMapKey).map(Number).sort((a, b) => a - b);
+    const named = all.filter(k => !isNumericMapKey(k)).sort();
+    return [...numeric, ...named];
 }
 
-// Same detected floors, plus a few "room to grow" slots beyond the highest
-// known one -- Floor Creator needs to let you start building on a brand new
-// floor that has zero NPCs/enemies/tiles yet, which getKnownFloorIndices()
-// alone would never surface (there's nothing there to detect).
+// Same detected numeric floors, plus a few "room to grow" slots beyond the
+// highest known one -- Floor Creator needs to let you start building on a
+// brand new floor that has zero NPCs/enemies/tiles yet, which detection
+// alone would never surface (there's nothing there yet to find). Named maps
+// (castle0, title1, etc) are deliberately NOT included here: Floor Creator's
+// loading pipeline forces selections through Number(), so a string key would
+// silently match nothing rather than erroring -- worse than not offering it.
+// The read-only Floor Visualizer is where those belong (getKnownMapKeys()).
 function getFloorOptionsForCreator() {
-    const known = getKnownFloorIndices();
+    const known = getKnownMapKeys().filter(isNumericMapKey).map(Number);
     const maxKnown = known.length ? known[known.length - 1] : -1;
     const extras = [maxKnown + 1, maxKnown + 2, maxKnown + 3];
     return Array.from(new Set([...known, ...extras])).sort((a, b) => a - b);
@@ -207,27 +236,12 @@ async function loadAllDefinitions() {
         try {
             definitions[key] = await fetchDefinition(url);
             console.log(`[Editor] Loaded ${key} definitions from GitHub`);
-            if (key === "npcs") {
-                const npcData = definitions.npcs;
-                if (npcData && typeof npcData === "object") {
-                    Object.values(npcData).forEach(npc => {
-                        if (Array.isArray(npc.spawns)) {
-                            const floors = npc.spawns
-                                .map(spawn => spawn.map)
-                                .map(m => isNaN(m) ? m : Number(m))
-                                .join(", ");
-                            console.log(`NPC: ${npc.name} (${npc.id}) - Floors: ${floors}`);
-                        }
-                    });
-                } else {
-                    console.log("No NPC data loaded or NPC data is not an object.");
-                }
-            }
         } catch (e) {
             console.error(`[Editor] Failed to load ${key}:`, e);
             definitions[key] = {};
         }
     }
+    await fetchFloorNames();
     renderFloorVisualizer();
     const overlay = document.getElementById('loading-overlay');
     if (overlay) overlay.style.display = 'none';

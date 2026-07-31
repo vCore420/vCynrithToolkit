@@ -1,15 +1,15 @@
 // Floor Visualizer Tab
 function renderFloorVisualizer() {
     const tab = document.getElementById('floor-visualizer-tab');
-    const floors = getKnownFloorIndices(); // auto-detected from live data -- see main.js
+    const floors = getKnownMapKeys(); // auto-detected from live data -- see main.js
 
     tab.innerHTML = `
         <h2>Floor Visualizer</h2>
-        <p>Select a floor to view everything linked to it. Floors are detected automatically from whatever NPCs, enemies, and tiles currently reference them -- nothing to update here as Cynrith grows.</p>
+        <p>Select a floor or named map to view everything linked to it. These are detected automatically from whatever NPCs, enemies, and tiles currently reference them -- nothing to update here as Cynrith grows.</p>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
             <select id="floor-select">
                 ${floors.length
-                    ? floors.map(idx => `<option value="${idx}">${getFloorLabel(idx)}</option>`).join("")
+                    ? floors.map(key => `<option value="${key}">${getFloorLabel(key)}</option>`).join("")
                     : `<option value="">No floors detected yet</option>`
                 }
             </select>
@@ -38,17 +38,24 @@ function matchesSearch(text, term) {
     return (text || "").toString().toLowerCase().includes(term.toLowerCase());
 }
 
-function showFloorLinks(floorIdx, searchTerm = "") {
+// Compares a map/floor key against a spawn/tile's `.map` value. Real spawn
+// data mixes numbers (0, 1, 2...) and strings ("castle0", "title1"...) --
+// comparing as strings handles both without needing to know which kind a
+// given key is.
+function matchesMapKey(mapValue, key) {
+    return mapValue !== undefined && mapValue !== null && String(mapValue) === String(key);
+}
+
+function showFloorLinks(floorKey, searchTerm = "") {
     const linksDiv = document.getElementById('floor-links');
-    if (floorIdx === "" || floorIdx === undefined) {
+    if (floorKey === "" || floorKey === undefined) {
         linksDiv.innerHTML = "";
         return;
     }
-    const idx = parseInt(floorIdx);
     const term = (searchTerm || "").trim();
 
     function onThisFloor(spawns) {
-        return Array.isArray(spawns) && spawns.some(spawn => Number(spawn.map) === idx);
+        return Array.isArray(spawns) && spawns.some(spawn => matchesMapKey(spawn.map, floorKey));
     }
 
     // NPCs
@@ -101,7 +108,7 @@ function showFloorLinks(floorIdx, searchTerm = "") {
     const interactData = definitions.interactTiles;
     if (Array.isArray(interactData)) {
         interactTiles = interactData.filter(tile =>
-            Number(tile.map) === idx && (matchesSearch(tile.id, term))
+            matchesMapKey(tile.map, floorKey) && matchesSearch(tile.id, term)
         );
     }
 
@@ -110,7 +117,7 @@ function showFloorLinks(floorIdx, searchTerm = "") {
     const triggerData = definitions.triggerTiles;
     if (Array.isArray(triggerData)) {
         triggerTiles = triggerData.filter(tile =>
-            Number(tile.map) === idx && (matchesSearch(tile.id, term))
+            matchesMapKey(tile.map, floorKey) && matchesSearch(tile.id, term)
         );
     }
 
@@ -130,7 +137,7 @@ function showFloorLinks(floorIdx, searchTerm = "") {
     }
 
     linksDiv.innerHTML = `
-        <h3>${getFloorLabel(idx)}</h3>
+        <h3>${getFloorLabel(floorKey)}</h3>
 
         <h3>NPCs <span style="color:#9aa4b2; font-weight:normal;">(${npcList.length})</span></h3>
         <ul>
