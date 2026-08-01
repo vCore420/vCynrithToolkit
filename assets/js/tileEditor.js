@@ -155,6 +155,15 @@ window.addEventListener('blur', () => {
     spaceHeld = false;
     if (!isPanning) canvas.style.cursor = 'crosshair';
 });
+
+window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+    if (isTypingTarget(e.target)) return;
+    if (!document.getElementById('tile-editor-tab').classList.contains('active')) return;
+    e.preventDefault();
+    if (e.shiftKey) restoreFrom(redo, undo);
+    else restoreFrom(undo, redo);
+});
 let isDrawing = false;
 let lastPt = null;
 let hoverPt = null;

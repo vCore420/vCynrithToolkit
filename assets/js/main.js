@@ -28,10 +28,12 @@ async function fetchFloorNames() {
 
         const namedMapMatch = text.match(/const\s+NAMED_MAP_INFO\s*=\s*({[\s\S]*?^\});/m);
         definitions.namedMapInfo = namedMapMatch ? eval('(' + namedMapMatch[1] + ')') : {};
+        return true;
     } catch (e) {
         console.error('[Editor] Failed to load floor names from map.js:', e);
-        definitions.floorNames = [];
-        definitions.namedMapInfo = {};
+        definitions.floorNames = definitions.floorNames || [];
+        definitions.namedMapInfo = definitions.namedMapInfo || {};
+        return false;
     }
 }
 
@@ -231,23 +233,66 @@ async function fetchDefinition(url) {
 }
   
 // Load all definitions
-async function loadAllDefinitions() {
+let liveDataFailures = [];
+
+function updateLiveDataWarning() {
+    const el = document.getElementById('live-data-warning');
+    if (!el) return;
+    if (liveDataFailures.length) {
+        el.style.display = 'block';
+        el.textContent = `⚠ Couldn't load: ${liveDataFailures.join(', ')}. Related dropdowns/lists may be incomplete -- try Refresh Live Data again in a moment.`;
+    } else {
+        el.style.display = 'none';
+        el.textContent = '';
+    }
+}
+
+// Fetches everything fresh from GitHub and updates `definitions` in place.
+// Used both for the initial page load and for the "Refresh Live Data"
+// button, so the toolkit's dropdowns/catalogs can be brought up to date
+// mid-session without a full page reload.
+async function refreshLiveData() {
+    const btn = document.getElementById('refresh-data-btn');
+    const originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = '🔄 Refreshing...'; }
+
+    liveDataFailures = [];
     for (const [key, url] of Object.entries(definitionFiles)) {
         try {
             definitions[key] = await fetchDefinition(url);
             console.log(`[Editor] Loaded ${key} definitions from GitHub`);
         } catch (e) {
             console.error(`[Editor] Failed to load ${key}:`, e);
-            definitions[key] = {};
+            definitions[key] = definitions[key] || {}; // keep whatever we had before rather than wiping it on a refresh failure
+            liveDataFailures.push(key);
         }
     }
-    await fetchFloorNames();
-    renderFloorVisualizer();
+    const floorNamesOk = await fetchFloorNames();
+    if (!floorNamesOk) liveDataFailures.push('floor names');
+
+    updateLiveDataWarning();
+
+    // Refresh whichever tabs are currently showing live data, so an update
+    // is visible right away instead of only on next navigation.
+    const fvTab = document.getElementById('floor-visualizer-tab');
+    if (fvTab && fvTab.classList.contains('active')) renderFloorVisualizer();
+    const itemsTab = document.getElementById('items-tab');
+    if (itemsTab && itemsTab.classList.contains('active')) renderItemsTab();
+    const skillsTab = document.getElementById('skills-tab');
+    if (skillsTab && skillsTab.classList.contains('active')) renderSkillsTab();
+
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+}
+
+async function loadAllDefinitions() {
+    await refreshLiveData();
     const overlay = document.getElementById('loading-overlay');
     if (overlay) overlay.style.display = 'none';
 }
   
 loadAllDefinitions();
+
+document.getElementById('refresh-data-btn').onclick = refreshLiveData;
 
 // Tab switching logic
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -272,3 +317,70 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         if (tabId === 'map-creator-tab') renderMapCreatorTab();
     };
 });
+
+// --- Project Backup ---
+// Everything the toolkit saves lives only in this browser's IndexedDB (see
+// autosave.js). This bundles all of it -- Map Creator, Tile Editor, Tile
+// Generator, Sprite Sheet Creator, and Floor Creator, including in-progress
+// drafts -- into one downloadable file, and can restore from one, so a
+// session isn't trapped in a single browser.
+const PROJECT_AUTOSAVE_KEYS = ['mapCreator', 'tileEditor', 'tileGenerator', 'spriteSheet', 'floorCreator'];
+
+async function exportProjectBackup() {
+    const bundle = { app: 'vCynrithToolkit', version: 1, exportedAt: new Date().toISOString(), data: {} };
+    for (const key of PROJECT_AUTOSAVE_KEYS) {
+        try {
+            bundle.data[key] = await Autosave.load(key);
+        } catch (e) {
+            console.warn(`Backup: failed to read "${key}"`, e);
+            bundle.data[key] = null;
+        }
+    }
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.download = `cynrith_toolkit_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    a.href = URL.createObjectURL(blob);
+    a.click();
+}
+
+async function importProjectBackup(file) {
+    let bundle;
+    try {
+        bundle = JSON.parse(await file.text());
+    } catch (e) {
+        alert("Could not read this file -- it doesn't look like valid JSON.");
+        return;
+    }
+    if (!bundle || typeof bundle.data !== 'object' || bundle.app !== 'vCynrithToolkit') {
+        alert("This doesn't look like a Cynrith Toolkit backup file.");
+        return;
+    }
+    const ok = confirm(
+        "Import this backup? This REPLACES everything currently saved in Map Creator, " +
+        "Tile Editor, Tile Generator, Sprite Sheet Creator, and Floor Creator with what's " +
+        "in the backup file (exported " + (bundle.exportedAt || "unknown date") + "). " +
+        "The page will reload afterward.\n\nThis can't be undone -- export a fresh backup of " +
+        "your current work first if you want to keep it too."
+    );
+    if (!ok) return;
+
+    for (const key of PROJECT_AUTOSAVE_KEYS) {
+        if (bundle.data[key] !== undefined && bundle.data[key] !== null) {
+            try {
+                await Autosave.save(key, bundle.data[key]);
+            } catch (e) {
+                console.warn(`Backup: failed to restore "${key}"`, e);
+            }
+        }
+    }
+    location.reload();
+}
+
+document.getElementById('export-backup-btn').onclick = exportProjectBackup;
+document.getElementById('import-backup-btn').onclick = () => document.getElementById('import-backup-input').click();
+document.getElementById('import-backup-input').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) importProjectBackup(file);
+    e.target.value = ''; // allow re-selecting the same file to re-trigger onchange
+};
+

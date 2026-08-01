@@ -402,6 +402,30 @@ function renderCreatorTab() {
     tab.addEventListener('change', scheduleCreatorAutosave);
     tab.addEventListener('click', scheduleCreatorAutosave);
 
+    // Escape cancels whichever map-picking mode is currently active (wander
+    // area/spawn, enemy spawn area, forced-encounter tiles, trigger/interact
+    // placement, sprite positions). Resetting all of them unconditionally is
+    // simpler and just as safe as tracking "which one is active" -- resetting
+    // an already-inactive one is a harmless no-op.
+    window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (!document.getElementById('creator-tab').classList.contains('active')) return;
+
+        wanderSelectionStep = 0; wanderFirstCorner = null;
+        enemySpawnSelectionStep = 0; enemySpawnFirstCorner = null;
+        forcedEncounterPicking = false;
+        triggerSelectionStep = 0;
+        interactSelectionStep = 0;
+        spriteSelectionStep = 0;
+
+        updateWanderPrompt();
+        updateForcedEncounterPrompt();
+        updateEnemySpawnPrompt();
+        updateTriggerPrompt();
+        updateInteractPrompt();
+        updateWorldSpritePositionPrompt();
+    });
+
     restoreCreatorAutosave();
 }
 
@@ -664,6 +688,7 @@ function showToolOptions(tool) {
                 </div>
                 ` : ""}
                 <button id="confirm-npc-btn" style="margin-top:16px;">Confirm NPC</button>
+                <button id="clear-npc-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>NPC Definition Preview</h4>
                 <pre id="npc-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
                 <div id="quest-def-preview-container" style="margin-top:12px;">
@@ -727,6 +752,7 @@ function showToolOptions(tool) {
                 <button id="enemy-set-spawn-btn" style="margin-top:8px;">Add Spawn Location</button>
                 <div id="enemy-spawn-preview" style="margin-top:8px;"></div>
                 <button id="confirm-enemy-btn" style="margin-top:16px;">Confirm Enemy</button>
+                <button id="clear-enemy-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Enemy Definition Preview</h4>
                 <pre id="enemy-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -787,6 +813,7 @@ function showToolOptions(tool) {
                     <button id="add-trigger-reward-btn" type="button" style="margin-top:4px;">Add Reward</button>
                 </label>
                 <button id="confirm-trigger-btn" style="margin-top:16px;">Confirm Trigger</button>
+                <button id="clear-trigger-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Trigger Definition Preview</h4>
                 <pre id="trigger-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -887,6 +914,7 @@ function showToolOptions(tool) {
                 </label>
 
                 <button id="confirm-interact-btn" style="margin-top:16px;">Confirm Interactable Tile</button>
+                <button id="clear-interact-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Interactable Tile Definition Preview</h4>
                 <pre id="inter-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -942,6 +970,7 @@ function showToolOptions(tool) {
                 </fieldset>
 
                 <button id="ws-confirm-btn" style="margin-top:16px;">Confirm World Sprite</button>
+                <button id="clear-ws-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>World Sprite Definition Preview</h4>
                 <pre id="ws-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -1032,6 +1061,7 @@ function showToolOptions(tool) {
                     </div>
                 </fieldset>
                 <button id="confirm-item-btn" style="margin-top:16px;">Confirm Item</button>
+                <button id="clear-item-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Item Definition Preview</h4>
                 <pre id="item-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -1082,6 +1112,7 @@ function showToolOptions(tool) {
                     <button id="add-skill-drawback-btn" type="button">Add Drawback</button>
                 </fieldset>
                 <button id="confirm-skill-btn" style="margin-top:16px;">Confirm Skill</button>
+                <button id="clear-skill-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Skill Definition Preview</h4>
                 <pre id="skill-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -1110,6 +1141,7 @@ function showToolOptions(tool) {
                     <button id="add-trader-sell-btn" type="button">Add Item</button>
                 </fieldset>
                 <button id="confirm-trader-btn" style="margin-top:16px;">Confirm Trader</button>
+                <button id="clear-trader-btn" type="button" style="margin-top:16px; margin-left:8px;">Clear Draft</button>
                 <h4>Trader Definition Preview</h4>
                 <pre id="trader-def-preview" style="background:#181a20; color:#eaeaea; padding:12px; border-radius:6px; font-size:0.95em;"></pre>
             </div>
@@ -1282,9 +1314,20 @@ function attachCreatorListeners() {
     }
     document.getElementById('confirm-npc-btn').onclick = () => {
         const npcCopy = JSON.parse(JSON.stringify(creatorState.npc));
+        const npcId = npcCopy.id || normalizeIdFromName(npcCopy.name || "");
+        const existingNpcIds = savedNpcs.map(n => n.id || normalizeIdFromName(n.name || ""));
+        if (npcId && existingNpcIds.includes(npcId)) {
+            if (!confirm(`An NPC with ID "${npcId}" already exists (derived from the name). Save anyway?\n\nThis creates a duplicate -- one will silently overwrite the other when you download the definitions file.`)) return;
+        }
         savedNpcs.push(npcCopy);
         renderSavedNpcs();
         renderNpcDownloadButtons();
+        clearNpcInputs();
+        updateCreatorPreview();
+        updateWanderPrompt();
+    };
+    document.getElementById('clear-npc-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
         clearNpcInputs();
         updateCreatorPreview();
         updateWanderPrompt();
@@ -2397,6 +2440,19 @@ function downloadTextFile(filename, text) {
     link.click();
 }
 
+// Quick, immediate duplicate-ID check at the moment "Confirm" is clicked --
+// complements the Consistency Checker (which catches this too, but only if
+// you remember to go run it) by catching the most common mistake right when
+// it happens. Returns true if it's fine to proceed, false if the user
+// cancelled after being warned. Saving a duplicate anyway is still allowed
+// (matches every tool's existing "just push" behavior) -- this only warns.
+function warnIfDuplicateId(list, id, label) {
+    if (!id) return true; // let each tool's own "please provide an ID" validation handle this
+    const exists = list.some(item => item && item.id === id);
+    if (!exists) return true;
+    return confirm(`An entry with ${label} "${id}" already exists. Save anyway?\n\nThis creates a duplicate -- one will silently overwrite the other when you download the definitions file.`);
+}
+
 // Generic renderer for a "saved X" list panel (saved NPCs, enemies,
 // triggers, interact tiles, world sprites, items, skills all use this same
 // shape: a list of rows with Edit/Delete buttons). Replaces 7 near-identical
@@ -2447,6 +2503,9 @@ function renderSavedList(config) {
     listDiv.querySelectorAll(`.${deleteBtnClass}`).forEach(btn => {
         btn.onclick = () => {
             const idx = Number(btn.dataset.idx);
+            const item = getItems()[idx];
+            const plainLabel = label(item).replace(/<[^>]*>/g, ''); // strip any HTML (e.g. the id sub-span) for a clean confirm message
+            if (!confirm(`Delete this entry? This can't be undone.\n\n${plainLabel}`)) return;
             getItems().splice(idx, 1);
             renderSavedList(config);
             if (onDelete) onDelete();
@@ -2721,9 +2780,15 @@ function attachEnemyCreatorListeners() {
 
     document.getElementById('confirm-enemy-btn').onclick = () => {
         const enemyCopy = JSON.parse(JSON.stringify(enemyCreatorState.enemy));
+        if (!warnIfDuplicateId(savedEnemies, enemyCopy.id, 'enemy ID')) return;
         savedEnemies.push(enemyCopy);
         renderSavedEnemies();
         renderEnemyDownloadButtons();
+        clearEnemyInputs();
+        updateEnemyCreatorPreview();
+    };
+    document.getElementById('clear-enemy-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
         clearEnemyInputs();
         updateEnemyCreatorPreview();
     };
@@ -2848,6 +2913,7 @@ function attachTriggerCreatorListeners() {
             updateTriggerPrompt("Please set a trigger tile on the map first.");
             return;
         }
+        if (!warnIfDuplicateId(savedTriggers, t.id, 'trigger tile ID')) return;
         savedTriggers.push(JSON.parse(JSON.stringify(t)));
         renderSavedTriggers();
         renderTriggerDownloadButtons();
@@ -2855,6 +2921,12 @@ function attachTriggerCreatorListeners() {
         updateTriggerCreatorPreview();
         updateTriggerPrompt();
         if (typeof drawMap === "function") drawMap();
+    };
+    document.getElementById('clear-trigger-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
+        clearTriggerInputs();
+        updateTriggerCreatorPreview();
+        updateTriggerPrompt();
     };
 }
 
@@ -3066,6 +3138,7 @@ function attachInteractCreatorListeners() {
             updateInteractPrompt("Please set the tile location on the map first.");
             return;
         }
+        if (!warnIfDuplicateId(savedInteractTiles, t.id, 'interactable tile ID')) return;
         savedInteractTiles.push(JSON.parse(JSON.stringify(t)));
         renderSavedInteractTiles();
         renderInteractDownloadButtons();
@@ -3073,6 +3146,12 @@ function attachInteractCreatorListeners() {
         updateInteractCreatorPreview();
         updateInteractPrompt();
         if (typeof drawMap === "function") drawMap();
+    };
+    document.getElementById('clear-interact-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
+        clearInteractInputs();
+        updateInteractCreatorPreview();
+        updateInteractPrompt();
     };
 }
 
@@ -3278,6 +3357,7 @@ function attachWorldSpriteCreatorListeners() {
     document.getElementById('ws-confirm-btn').onclick = () => {
         if (!s.id) return;
         if (!s.imageName) return;
+        if (!warnIfDuplicateId(savedWorldSprites, s.id, 'world sprite ID')) return;
         const copy = JSON.parse(JSON.stringify(s));
         savedWorldSprites.push(copy);
         renderSavedWorldSprites();
@@ -3285,6 +3365,11 @@ function attachWorldSpriteCreatorListeners() {
         clearWorldSpriteInputs();
         updateWorldSpritePreview();
         if (typeof drawMap === "function") drawMap();
+    };
+    document.getElementById('clear-ws-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
+        clearWorldSpriteInputs();
+        updateWorldSpritePreview();
     };
 }
 
@@ -3466,9 +3551,15 @@ function attachItemCreatorListeners() {
 
     document.getElementById('confirm-item-btn').onclick = () => {
         const copy = JSON.parse(JSON.stringify(itemCreatorState.item));
+        if (!warnIfDuplicateId(savedItems, copy.id, 'item ID')) return;
         savedItems.push(copy);
         renderSavedItems();
         renderItemDownloadButtons();
+        clearItemInputs();
+        updateItemPreview();
+    };
+    document.getElementById('clear-item-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
         clearItemInputs();
         updateItemPreview();
     };
@@ -3649,9 +3740,15 @@ function attachSkillCreatorListeners() {
 
     document.getElementById('confirm-skill-btn').onclick = () => {
         const copy = JSON.parse(JSON.stringify(skillCreatorState.skill));
+        if (!warnIfDuplicateId(savedSkills, copy.id, 'skill ID')) return;
         savedSkills.push(copy);
         renderSavedSkills();
         renderSkillDownloadButtons();
+        clearSkillInputs();
+        updateSkillPreview();
+    };
+    document.getElementById('clear-skill-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
         clearSkillInputs();
         updateSkillPreview();
     };
@@ -4015,10 +4112,16 @@ function attachTraderCreatorListeners() {
 
     document.getElementById('confirm-trader-btn').onclick = () => {
         if (!t.id) { alert('Please enter a Trader ID.'); return; }
+        if (!warnIfDuplicateId(savedTraders, t.id, 'trader ID')) return;
         const copy = JSON.parse(JSON.stringify(t));
         savedTraders.push(copy);
         renderSavedTraders();
         renderTraderDownloadButtons();
+        clearTraderInputs();
+        updateTraderPreview();
+    };
+    document.getElementById('clear-trader-btn').onclick = () => {
+        if (!confirm('Clear this draft? Anything typed here that you haven\'t confirmed will be lost.')) return;
         clearTraderInputs();
         updateTraderPreview();
     };

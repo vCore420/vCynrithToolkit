@@ -206,6 +206,15 @@ function renderSpriteSheetTab() {
     if (!isPanning) canvas.style.cursor = 'crosshair';
   });
 
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+    if (isTypingTarget(e.target)) return;
+    if (!document.getElementById('sprite-sheet-tab').classList.contains('active')) return;
+    e.preventDefault();
+    if (e.shiftKey) restoreFrom(getHistory().redo, getHistory().undo);
+    else restoreFrom(getHistory().undo, getHistory().redo);
+  });
+
   // --- Undo/redo (per frame, so undo only ever affects the frame you're looking at) ---
   function getHistory() {
     if (!history[currentFrame]) history[currentFrame] = { undo: [], redo: [] };

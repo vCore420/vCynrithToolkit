@@ -29,9 +29,37 @@ const Autosave = (() => {
                 tx.oncomplete = resolve;
                 tx.onerror = () => reject(tx.error);
             });
+            flashSavedIndicator();
         } catch (err) {
             console.warn(`Autosave: could not save "${key}"`, err);
         }
+    }
+
+    // A small, unobtrusive "Saved" indicator that briefly appears after a
+    // successful autosave. One shared element works for all five tools
+    // (Map Creator, Tile Editor, Tile Generator, Sprite Sheet Creator, Floor
+    // Creator) since they all funnel through save() above -- no per-tool
+    // wiring needed.
+    let indicatorHideTimer = null;
+    function flashSavedIndicator() {
+        let el = document.getElementById('autosave-indicator');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'autosave-indicator';
+            el.textContent = '✓ Saved';
+            el.style.cssText = `
+                position: fixed; bottom: 16px; right: 16px; z-index: 10000;
+                background: #2d4a2d; color: #8fc767; padding: 8px 14px;
+                border-radius: 6px; font-size: 13px; font-weight: 500;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+                opacity: 0; transition: opacity 0.3s ease;
+                pointer-events: none;
+            `;
+            document.body.appendChild(el);
+        }
+        el.style.opacity = '1';
+        clearTimeout(indicatorHideTimer);
+        indicatorHideTimer = setTimeout(() => { el.style.opacity = '0'; }, 1200);
     }
 
     async function load(key) {

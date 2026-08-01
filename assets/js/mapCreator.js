@@ -22,6 +22,10 @@ function renderMapCreatorTab() {
             <button data-tool="rect" title="Rect">▭</button>
             <button data-tool="picker" title="Picker">🧪</button>
           </div>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button id="mc-undo" type="button" title="Undo (Ctrl+Z)">↶ Undo</button>
+            <button id="mc-redo" type="button" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+          </div>
   
           <div>
             <label><b>Tileset Images (PNG)</b></label>
@@ -124,6 +128,8 @@ function renderMapCreatorTab() {
     let hoverTile = null;
     let settingSpawn = false;
     let settingTeleport = false;
+    let undoStack = [];
+    let redoStack = [];
 
     // Helpers
     function idx(x, y) { return y * state.width + x; }
@@ -261,6 +267,30 @@ function renderMapCreatorTab() {
         const ty = Math.floor(mouseY / state.th);
         if (tx < 0 || ty < 0 || tx >= state.width || ty >= state.height) return null;
         return { tx, ty };
+    }
+    // Undo/redo: snapshots the active layer's tile data. One snapshot per
+    // interaction (taken at pointerdown, before any mutation), so an entire
+    // drag-painted stroke or rect-fill undoes as a single step, matching how
+    // Tile Editor and Sprite Sheet Creator's undo already feels.
+    function pushUndo() {
+        const L = state.layers[state.currentLayer];
+        if (!L) return;
+        undoStack.push({ layerIndex: state.currentLayer, data: new Uint32Array(L.data) });
+        if (undoStack.length > 50) undoStack.shift();
+        redoStack.length = 0;
+    }
+    function restoreFrom(stackFrom, stackTo) {
+        if (!stackFrom.length) return;
+        const current = state.layers[state.currentLayer];
+        if (current) stackTo.push({ layerIndex: state.currentLayer, data: new Uint32Array(current.data) });
+        const snap = stackFrom.pop();
+        const target = state.layers[snap.layerIndex];
+        if (target && target.data.length === snap.data.length) {
+            target.data = new Uint32Array(snap.data);
+            state.currentLayer = snap.layerIndex;
+        }
+        renderLayersUI();
+        draw();
     }
     function paintAt(tx, ty, gid) {
       const L = state.layers[state.currentLayer];
@@ -643,6 +673,7 @@ function renderMapCreatorTab() {
           dragStart.x = e.clientX - state.offset.x;
           dragStart.y = e.clientY - state.offset.y;
         } else {
+          pushUndo();
           state.dragging = true;
           handlePaint(e, 'down');
         }
@@ -718,6 +749,20 @@ function renderMapCreatorTab() {
         state.offset.y = 0;
         draw();
     };
+    document.getElementById('mc-undo').onclick = () => restoreFrom(undoStack, redoStack);
+    document.getElementById('mc-redo').onclick = () => restoreFrom(redoStack, undoStack);
+
+    function isTypingTarget(el) {
+        return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    }
+    window.addEventListener('keydown', (e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+        if (isTypingTarget(e.target)) return;
+        if (!document.getElementById('map-creator-tab').classList.contains('active')) return;
+        e.preventDefault();
+        if (e.shiftKey) restoreFrom(redoStack, undoStack);
+        else restoreFrom(undoStack, redoStack);
+    });
 
     // Mouse-wheel zoom-to-cursor and two-finger pinch zoom/pan (shared with
     // Tile Editor and Floor Creator via canvasViewport.js).
