@@ -28,6 +28,14 @@
         <button class="tab-btn" data-tab="sprite-sheet">Sprite Sheet Creator</button>
         <button class="tab-btn" data-tab="map-creator">Map Creator</button>
         <button class="tab-btn" data-tab="creator">Floor Creator</button>
+        <div id="sidebar-footer" style="margin-top:auto; padding:12px 16px 0; border-top:1px solid var(--color-border); display:flex; flex-direction:column; gap:6px;">
+          <div id="live-data-warning" style="display:none; color:#f1c40f; font-size:11px; background:#2b2410; border-radius:6px; padding:8px;"></div>
+          <button id="refresh-data-btn" type="button" style="width:100%;" title="Re-fetch items/skills/quests/traders/NPCs/enemies/tiles from GitHub without reloading the page">🔄 Refresh Live Data</button>
+          <div style="color:#9aa4b2; font-size:11px; margin-top:6px;">Everything above is saved in this browser only.</div>
+          <button id="export-backup-btn" type="button" style="width:100%;">⬇ Export Backup</button>
+          <input type="file" id="import-backup-input" accept="application/json" style="display:none;">
+          <button id="import-backup-btn" type="button" style="width:100%; margin-top:6px;">⬆ Import Backup</button>
+        </div>
       </aside>
       <main id="main-panel">
         <div id="floor-visualizer-tab" class="editor-tab active"></div>
